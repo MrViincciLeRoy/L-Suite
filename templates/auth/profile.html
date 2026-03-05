@@ -1,0 +1,85 @@
+<!-- ============================================================
+     lsuite/templates/auth/profile.html
+     ============================================================ -->
+{% extends "base.html" %}
+
+{% block title %}Profile - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-user-circle"></i> My Profile</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>Profile Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{% url 'authusers:profile' %}">
+                    {{ form.hidden_tag }}
+                    
+                    <div class="mb-3">
+                        {{ form.username.label}}
+                        {{ form.username }}
+                        {% if form.username.errors %}
+                            <div class="invalid-feedback">{{ form.username.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.email.label }}
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                            <div class="invalid-feedback">{{ form.email.errors }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        {{ form.submit }}
+                        <a href="{% url 'authusers:change_password' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-lock"></i> Change Password
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Account Details</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-5">User ID:</dt>
+                    <dd class="col-sm-7">{{ current_user.id }}</dd>
+                    
+                    <dt class="col-sm-5">Status:</dt>
+                    <dd class="col-sm-7">
+                        <span class="badge bg-success">Active</span>
+                    </dd>
+                    
+                    <dt class="col-sm-5">Admin:</dt>
+                    <dd class="col-sm-7">
+                        {% if current_user.is_admin %}
+                            <span class="badge bg-danger">Yes</span>
+                        {% else %}
+                            <span class="badge bg-secondary">No</span>
+                        {% endif %}
+                    </dd>
+                    
+                    <dt class="col-sm-5">Member Since:</dt>
+                    <dd class="col-sm-7">
+                        {% if current_user.created_at %}
+                        {{ current_user.created_at.strftime  }}
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

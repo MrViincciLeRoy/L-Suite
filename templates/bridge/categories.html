@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Transaction Categories - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-tags"></i> Transaction Categories</h1>
+    <a href="{% url 'bridge:new_category' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Add Category
+    </a>
+</div>
+
+{# Pass from view: categories_with_stats = [(category, {'total':x,'synced':y,'pending':z}), ...] #}
+{% if categories_with_stats %}
+<div class="row">
+    {% for category, stats in categories_with_stats %}
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ category.name }}</h5>
+                <div>
+                    {% if category.active %}
+                        <span class="badge bg-success">Active</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Inactive</span>
+                    {% endif %}
+                    {% if category.transaction_type == 'expense' %}
+                        <span class="badge bg-danger">Expense</span>
+                    {% elif category.transaction_type == 'income' %}
+                        <span class="badge bg-success">Income</span>
+                    {% else %}
+                        <span class="badge bg-info">Transfer</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">ERPNext Account:</dt>
+                    <dd class="col-sm-7"><small>{{ category.erpnext_account }}</small></dd>
+
+                    <dt class="col-sm-5">Keywords:</dt>
+                    <dd class="col-sm-7">
+                        {% if category.keywords %}
+                            <small class="text-muted">{{ category.keywords|truncatechars:50 }}</small>
+                        {% else %}
+                            <span class="text-muted">No keywords</span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-5">Transactions:</dt>
+                    <dd class="col-sm-7">
+                        <strong>{{ stats.total }}</strong> total<br>
+                        <small>
+                            <span class="text-success">{{ stats.synced }} synced</span> &bull;
+                            <span class="text-warning">{{ stats.pending }} pending</span>
+                        </small>
+                    </dd>
+
+                    <dt class="col-sm-5">Created:</dt>
+                    <dd class="col-sm-7">{{ category.created_at|date:"Y-m-d" }}</dd>
+                </dl>
+            </div>
+            <div class="card-footer">
+                <div class="btn-group" role="group">
+                    <a href="{% url 'bridge:category_transactions' category.pk %}" class="btn btn-info btn-sm">
+                        <i class="fas fa-list"></i> View Transactions
+                    </a>
+                    <a href="{% url 'bridge:edit_category' category.pk %}" class="btn btn-warning btn-sm">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    <button type="button" class="btn btn-danger btn-sm"
+                            data-bs-toggle="modal" data-bs-target="#deleteModal{{ category.pk }}">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="deleteModal{{ category.pk }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to delete "{{ category.name }}"?
+                    {% if stats.total > 0 %}
+                    <div class="alert alert-warning mt-2">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ stats.total }} transaction(s) use this category — cannot delete while in use.
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form method="POST" action="{% url 'bridge:delete_category' category.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger" {% if stats.total > 0 %}disabled{% endif %}>
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    No categories yet. <a href="{% url 'bridge:new_category' %}">Add your first category</a>.
+</div>
+<div class="card">
+    <div class="card-body">
+        <h5><i class="fas fa-lightbulb"></i> Tips</h5>
+        <ul class="mb-0">
+            <li>Keywords are comma-separated: <code>uber, bolt, taxi</code></li>
+            <li>Matching is case-insensitive against transaction descriptions</li>
+            <li>ERPNext account format: <code>Account Name - Company Abbr</code></li>
+        </ul>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

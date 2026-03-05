@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}{% if config %}Edit{% else %}New{% endif %} ERPNext Configuration - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-cog"></i>
+        {% if config %}Edit Configuration{% else %}New ERPNext Configuration{% endif %}
+    </h1>
+    <a href="{% url 'erpnext:configs' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back
+    </a>
+</div>
+
+<form method="POST">
+    {% csrf_token %}
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header"><h5>Connection Details</h5></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Configuration Name *</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               value="{{ config.name|default:'' }}"
+                               placeholder="e.g., Production ERPNext" required>
+                        <small class="form-text text-muted">A friendly name to identify this configuration</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="base_url" class="form-label">ERPNext Base URL *</label>
+                        <input type="url" class="form-control" id="base_url" name="base_url"
+                               value="{{ config.base_url|default:'' }}"
+                               placeholder="https://your-erpnext-instance.com" required>
+                        <small class="form-text text-muted">Your ERPNext instance URL (without trailing slash)</small>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="api_key" class="form-label">API Key *</label>
+                            <input type="text" class="form-control" id="api_key" name="api_key"
+                                   value="{{ config.api_key|default:'' }}"
+                                   placeholder="API Key" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="api_secret" class="form-label">API Secret *</label>
+                            <input type="password" class="form-control" id="api_secret" name="api_secret"
+                                   value="{{ config.api_secret|default:'' }}"
+                                   placeholder="API Secret" required>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <small>
+                            <i class="fas fa-info-circle"></i>
+                            Get API credentials from ERPNext: User → API Access → Generate Keys
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header"><h5>Accounting Details</h5></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="default_company" class="form-label">Default Company *</label>
+                        <input type="text" class="form-control" id="default_company" name="default_company"
+                               value="{{ config.default_company|default:'' }}"
+                               placeholder="e.g., My Company" required>
+                        <small class="form-text text-muted">The company name as it appears in ERPNext</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="bank_account" class="form-label">Bank Account *</label>
+                        <input type="text" class="form-control" id="bank_account" name="bank_account"
+                               value="{{ config.bank_account|default:'' }}"
+                               placeholder="e.g., Bank Account - MC" required>
+                        <small class="form-text text-muted">The bank account name in ERPNext Chart of Accounts</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="default_cost_center" class="form-label">Default Cost Center (Optional)</label>
+                        <input type="text" class="form-control" id="default_cost_center" name="default_cost_center"
+                               value="{{ config.default_cost_center|default:'' }}"
+                               placeholder="e.g., Main - MC">
+                        <small class="form-text text-muted">Cost center for journal entries (leave blank to use default)</small>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="active" name="active" value="true"
+                               {% if not config or config.active %}checked{% endif %}>
+                        <label class="form-check-label" for="active">Set as active configuration</label>
+                        <small class="form-text text-muted d-block">Only one configuration can be active at a time</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{% url 'erpnext:configs' %}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> {% if config %}Update{% else %}Create{% endif %} Configuration
+                </button>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-header"><h5><i class="fas fa-info-circle"></i> Setup Guide</h5></div>
+                <div class="card-body">
+                    <h6>1. Create API User</h6>
+                    <p class="small">In ERPNext, create a user with System Manager role</p>
+                    <h6>2. Generate API Keys</h6>
+                    <p class="small">User → API Access → Generate Keys</p>
+                    <h6>3. Set Permissions</h6>
+                    <ul class="small">
+                        <li>Journal Entry (Create, Read)</li>
+                        <li>Account (Read)</li>
+                        <li>Cost Center (Read)</li>
+                    </ul>
+                    <h6>4. Note Account Names</h6>
+                    <p class="small">
+                        Get exact account names from ERPNext Chart of Accounts.
+                        Format: <code>Account Name - Company Abbr</code>
+                    </p>
+                    <h6>5. Test Connection</h6>
+                    <p class="small mb-0">After saving, use the "Test Connection" button to verify setup</p>
+                </div>
+            </div>
+
+            <div class="card bg-warning mt-3">
+                <div class="card-body">
+                    <h6><i class="fas fa-exclamation-triangle"></i> Important</h6>
+                    <p class="small mb-0">
+                        Keep your API credentials secure. Never share them or commit them to version control.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}

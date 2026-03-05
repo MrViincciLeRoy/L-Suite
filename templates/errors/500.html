@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - LSuite{% endblock %}
+
+{% block content %}
+<div class="container text-center" style="margin-top: 100px;">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <i class="fas fa-server text-danger" style="font-size: 80px;"></i>
+            <h1 class="display-1">500</h1>
+            <h2>Internal Server Error</h2>
+            <p class="lead">Something went wrong on our end. We're working to fix it.</p>
+            <a href="{% url 'main:index' %}" class="btn btn-primary btn-lg">
+                <i class="fas fa-home"></i> Go to Dashboard
+            </a>
+            <a href="javascript:history.back()" class="btn btn-secondary btn-lg">
+                <i class="fas fa-arrow-left"></i> Go Back
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

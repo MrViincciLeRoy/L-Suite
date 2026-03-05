@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}ERPNext Configurations - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-cog"></i> ERPNext Configurations</h1>
+    <a href="{% url 'erpnext:new_config' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Add Configuration
+    </a>
+</div>
+
+{% if configs %}
+<div class="row">
+    {% for config in configs %}
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ config.name }}</h5>
+                {% if config.active %}
+                    <span class="badge bg-success">Active</span>
+                {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Base URL:</dt>
+                    <dd class="col-sm-7"><small class="text-muted">{{ config.base_url }}</small></dd>
+                    <dt class="col-sm-5">Company:</dt>
+                    <dd class="col-sm-7">{{ config.default_company }}</dd>
+                    <dt class="col-sm-5">Bank Account:</dt>
+                    <dd class="col-sm-7"><small>{{ config.bank_account }}</small></dd>
+                    {% if config.default_cost_center %}
+                    <dt class="col-sm-5">Cost Center:</dt>
+                    <dd class="col-sm-7"><small>{{ config.default_cost_center }}</small></dd>
+                    {% endif %}
+                    <dt class="col-sm-5">Last Sync:</dt>
+                    <dd class="col-sm-7">
+                        {% if config.last_sync %}
+                            {{ config.last_sync|date:"Y-m-d H:i" }}
+                        {% else %}
+                            <span class="text-muted">Never</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-sm-5">Created:</dt>
+                    <dd class="col-sm-7">{{ config.created_at|date:"Y-m-d" }}</dd>
+                </dl>
+            </div>
+            <div class="card-footer">
+                <div class="btn-group" role="group">
+                    <form method="POST" action="{% url 'erpnext:test_connection' pk=config.id %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-info btn-sm">
+                            <i class="fas fa-plug"></i> Test Connection
+                        </button>
+                    </form>
+                    <a href="{% url 'erpnext:edit_config' pk=config.id %}" class="btn btn-warning btn-sm">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    <button type="button" class="btn btn-danger btn-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#deleteModal{{ config.id }}">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="deleteModal{{ config.id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    Are you sure you want to delete configuration "{{ config.name }}"? This action cannot be undone.
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form method="POST" action="{% url 'erpnext:delete_config' pk=config.id %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">Delete</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    No ERPNext configurations found.
+    <a href="{% url 'erpnext:new_config' %}">Add your first configuration</a>
+    to start syncing transactions to ERPNext.
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5><i class="fas fa-lightbulb"></i> Getting Started</h5>
+        <ol>
+            <li>Ensure you have ERPNext instance running</li>
+            <li>Create an API user in ERPNext with appropriate permissions</li>
+            <li>Generate API Key and API Secret for the user</li>
+            <li>Note your company name and bank account name</li>
+            <li>Click "Add Configuration" above and fill in the details</li>
+            <li>Test the connection</li>
+        </ol>
+        <div class="alert alert-warning">
+            <strong>Required ERPNext Permissions:</strong>
+            <ul class="mb-0">
+                <li>Journal Entry: Create, Read</li>
+                <li>Account: Read</li>
+                <li>Cost Center: Read</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

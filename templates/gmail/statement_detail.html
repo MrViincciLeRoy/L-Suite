@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Statement Details - LSuite{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-file-invoice"></i> Statement Details</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'main:index' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'gmail:statements' %}">Statements</a></li>
+                    <li class="breadcrumb-item active">{{ statement.id }}</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">Statement Information</h5></div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">From:</dt>
+                        <dd class="col-sm-8">{{ statement.sender }}</dd>
+                        <dt class="col-sm-4">Subject:</dt>
+                        <dd class="col-sm-8">{{ statement.subject }}</dd>
+                        <dt class="col-sm-4">Date:</dt>
+                        <dd class="col-sm-8">{{ statement.received_date|date:"Y-m-d H:i"|default:"N/A" }}</dd>
+                        <dt class="col-sm-4">Bank:</dt>
+                        <dd class="col-sm-8"><span class="badge bg-info">{{ statement.bank_name }}</span></dd>
+                        <dt class="col-sm-4">Status:</dt>
+                        <dd class="col-sm-8">
+                            {% if statement.state == 'parsed' %}
+                                <span class="badge bg-success">Parsed</span>
+                            {% elif statement.state == 'error' %}
+                                <span class="badge bg-danger">Error</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ statement.state }}</span>
+                            {% endif %}
+                        </dd>
+                        <dt class="col-sm-4">Has PDF:</dt>
+                        <dd class="col-sm-8">
+                            {% if statement.has_pdf %}
+                                <i class="fas fa-check text-success"></i> Yes
+                            {% else %}
+                                <i class="fas fa-times text-danger"></i> No
+                            {% endif %}
+                        </dd>
+                        <dt class="col-sm-4">Transactions:</dt>
+                        <dd class="col-sm-8"><strong>{{ statement.transaction_count }}</strong></dd>
+                    </dl>
+
+                    {% if statement.error_message %}
+                    <div class="alert alert-danger mt-3">
+                        <strong>Error:</strong><br>{{ statement.error_message }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if statement.has_pdf and statement.state != 'parsed' %}
+            <div class="card mt-3">
+                <div class="card-header"><h5 class="mb-0">Parse PDF Statement</h5></div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'gmail:parse_statement' pk=statement.id %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="pdf_password" class="form-label">
+                                PDF Password <small class="text-muted">(if required)</small>
+                            </label>
+                            <input type="password" class="form-control" id="pdf_password" name="pdf_password"
+                                   placeholder="Leave blank if no password"
+                                   value="{{ statement.pdf_password|default:'' }}">
+                            <div class="form-text">Common formats: ID number, account number last 4 digits</div>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="save_password"
+                                   name="save_password" value="yes" checked>
+                            <label class="form-check-label" for="save_password">Save password for future use</label>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sync"></i> Parse PDF
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Transactions ({{ transactions|length }})</h5>
+                    {% if transactions %}
+                    <a href="{% url 'gmail:transactions' %}?statement_id={{ statement.id }}"
+                       class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-list"></i> View All
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="card-body p-0">
+                    {% if transactions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th class="text-end">Withdrawal</th>
+                                    <th class="text-end">Deposit</th>
+                                    <th>Category</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in transactions|slice:":20" %}
+                                <tr style="cursor: pointer;"
+                                    onclick="window.location='{% url 'gmail:transaction_detail' pk=transaction.id %}'">
+                                    <td>{{ transaction.date|date:"Y-m-d" }}</td>
+                                    <td>
+                                        <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            {{ transaction.description }}
+                                        </div>
+                                    </td>
+                                    <td class="text-end text-danger">
+                                        {% if transaction.withdrawal %}
+                                            R {{ transaction.withdrawal|floatformat:2 }}
+                                        {% else %}-{% endif %}
+                                    </td>
+                                    <td class="text-end text-success">
+                                        {% if transaction.deposit %}
+                                            R {{ transaction.deposit|floatformat:2 }}
+                                        {% else %}-{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if transaction.category %}
+                                            <span class="badge bg-info">{{ transaction.category.name }}</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Uncategorized</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if transaction.erpnext_synced %}
+                                            <i class="fas fa-check-circle text-success" title="Synced to ERPNext"></i>
+                                        {% else %}
+                                            <i class="fas fa-circle text-muted" title="Not synced"></i>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if transactions|length > 20 %}
+                    <div class="card-footer text-center">
+                        <a href="{% url 'gmail:transactions' %}?statement_id={{ statement.id }}"
+                           class="btn btn-sm btn-outline-primary">
+                            View all {{ transactions|length }} transactions
+                        </a>
+                    </div>
+                    {% endif %}
+
+                    {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="fas fa-inbox fa-3x mb-3"></i>
+                        <p>No transactions found.</p>
+                        {% if statement.has_pdf and statement.state != 'parsed' %}
+                        <p class="small">Parse the PDF to extract transactions.</p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

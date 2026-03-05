@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}{% if category %}Edit{% else %}New{% endif %} Category - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-tags"></i>
+        {% if category %}Edit Category{% else %}New Transaction Category{% endif %}
+    </h1>
+    <a href="{% url 'bridge:categories' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back
+    </a>
+</div>
+
+<form method="POST">
+    {% csrf_token %}
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Category Name *</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               value="{{ category.name|default:'' }}"
+                               placeholder="e.g., Transport & Fuel" required>
+                        <small class="form-text text-muted">A descriptive name for this category</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="erpnext_account" class="form-label">ERPNext Account *</label>
+                        <input type="text" class="form-control" id="erpnext_account" name="erpnext_account"
+                               value="{{ category.erpnext_account|default:'' }}"
+                               placeholder="e.g., Transport Expenses - Company" required>
+                        <small class="form-text text-muted">
+                            The account name in ERPNext Chart of Accounts (include company abbreviation)
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="transaction_type" class="form-label">Transaction Type *</label>
+                        <select class="form-select" id="transaction_type" name="transaction_type" required>
+                            <option value="">Select type...</option>
+                            <option value="expense" {% if category.transaction_type == 'expense' %}selected{% endif %}>
+                                Expense (Money Out)
+                            </option>
+                            <option value="income" {% if category.transaction_type == 'income' %}selected{% endif %}>
+                                Income (Money In)
+                            </option>
+                            <option value="transfer" {% if category.transaction_type == 'transfer' %}selected{% endif %}>
+                                Transfer (Internal)
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="keywords" class="form-label">Keywords (comma-separated)</label>
+                        <textarea class="form-control" id="keywords" name="keywords" rows="3"
+                                  placeholder="uber, bolt, taxi, transport, fuel">{{ category.keywords|default:'' }}</textarea>
+                        <small class="form-text text-muted">Keywords to automatically match transactions (case-insensitive)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="color" class="form-label">Color (Optional)</label>
+                        <input type="number" class="form-control" id="color" name="color"
+                               value="{{ category.color|default:'' }}" min="1" max="20" placeholder="1-20">
+                        <small class="form-text text-muted">A number 1-20 for visual identification</small>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="active" name="active" value="true"
+                               {% if not category or category.active %}checked{% endif %}>
+                        <label class="form-check-label" for="active">Active</label>
+                        <small class="form-text text-muted d-block">
+                            Inactive categories won't be used for auto-categorization
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                <a href="{% url 'bridge:categories' %}" class="btn btn-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> {% if category %}Update{% else %}Create{% endif %} Category
+                </button>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-light">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Tips</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Keyword Matching</h6>
+                    <p class="small">
+                        Keywords are matched against transaction descriptions.
+                        If any keyword is found, the transaction is automatically categorized.
+                    </p>
+                    <h6>Example Keywords</h6>
+                    <div class="alert alert-info small">
+                        <strong>Transport:</strong><br>uber, bolt, taxi, fuel, petrol, diesel
+                        <hr class="my-2">
+                        <strong>Food:</strong><br>restaurant, coffee, lunch, food, cafe
+                        <hr class="my-2">
+                        <strong>Utilities:</strong><br>electricity, water, internet, telkom, eskom
+                    </div>
+                    <h6>ERPNext Account Format</h6>
+                    <p class="small mb-0">
+                        Use the exact account name from ERPNext including the company abbreviation:<br>
+                        <code>Account Name - Company Abbr</code><br>
+                        Example: <code>Transport Expenses - MC</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}

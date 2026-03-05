@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}{{ category.name }} Transactions - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="fas fa-tag"></i> {{ category.name }} - Transactions
+    </h1>
+    <a href="{% url 'bridge:categories' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Categories
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <dl class="row">
+                    <dt class="col-sm-5">ERPNext Account:</dt>
+                    <dd class="col-sm-7">{{ category.erpnext_account }}</dd>
+                    <dt class="col-sm-5">Type:</dt>
+                    <dd class="col-sm-7">
+                        {% if category.transaction_type == 'expense' %}
+                            <span class="badge bg-danger">Expense</span>
+                        {% elif category.transaction_type == 'income' %}
+                            <span class="badge bg-success">Income</span>
+                        {% else %}
+                            <span class="badge bg-info">Transfer</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+            <div class="col-md-6">
+                <dl class="row">
+                    <dt class="col-sm-5">Keywords:</dt>
+                    <dd class="col-sm-7">{{ category.keywords|default:"None" }}</dd>
+                    <dt class="col-sm-5">Total Transactions:</dt>
+                    <dd class="col-sm-7"><strong>{{ transactions.paginator.count }}</strong></dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if transactions.object_list %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Synced</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trans in transactions.object_list %}
+                    <tr>
+                        <td>{{ trans.date }}</td>
+                        <td>{{ trans.description }}</td>
+                        <td class="text-{{ trans.transaction_type|yesno:'danger,success,info' }}">
+                            R{{ trans.amount|floatformat:2 }}
+                        </td>
+                        <td>
+                            {% if trans.erpnext_synced %}
+                                <span class="text-success"><i class="fas fa-check"></i> Yes</span>
+                            {% else %}
+                                <span class="text-muted"><i class="fas fa-times"></i> No</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if transactions.paginator.num_pages > 1 %}
+<nav aria-label="Page navigation" class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not transactions.has_previous %}disabled{% endif %}">
+            <a class="page-link"
+               href="?page={{ transactions.previous_page_number }}">Previous</a>
+        </li>
+        {% for page_num in transactions.paginator.page_range %}
+            {% if page_num == transactions.number %}
+                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+            {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not transactions.has_next %}disabled{% endif %}">
+            <a class="page-link"
+               href="?page={{ transactions.next_page_number }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> No transactions found for this category.
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,33 @@
+{% if messages %}
+<div class="flash-messages mt-3">
+    {% for message in messages %}
+        {% if message.tags == 'error' %}
+            {% with tag='danger' %}
+            <div class="alert alert-{{ tag }} alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-circle"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endwith %}
+        {% elif message.tags == 'success' %}
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% elif message.tags == 'warning' %}
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% else %}
+            <div class="alert alert-info alert-dismissible fade show" role="alert">
+                <i class="fas fa-info-circle"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endif %}

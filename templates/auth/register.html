@@ -1,0 +1,35 @@
+<!-- ============================================================
+     lsuite/templates/auth/register.html
+     ============================================================ -->
+{% extends "base.html" %}
+
+{% block title %}Register - LSuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow">
+            <div class="card-body p-5">
+                <h3 class="text-center mb-4">Create Account</h3>
+                
+                <form method="POST" action="{% url 'authusers:register' %}">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                    
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">Register</button>
+                    </div>
+                </form>
+                
+                <hr class="my-4">
+                
+                <p class="text-center text-muted">
+                    Already have an account?
+                    <a href="{% url 'authusers:login' %}">Login here</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

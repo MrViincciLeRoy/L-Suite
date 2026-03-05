@@ -1,0 +1,98 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LSuite - Ledger Suite{% endblock %}</title>
+    <link href="{% static 'dist/css/bootstrap.min.css' %}" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/fontawesome/all.min.css' %}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    {% include 'components/navbar.html' %}
+
+    <div class="container-fluid">
+        <div class="row">
+            {% if request.user.is_authenticated %}
+            <nav class="col-md-2 d-md-block bg-light sidebar">
+                <div class="position-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'main:index' %}active{% endif %}"
+                               href="{% url 'main:index' %}">
+                                <i class="fas fa-home"></i> Dashboard
+                            </a>
+                        </li>
+
+                        <li class="nav-item mt-3">
+                            <h6 class="sidebar-heading px-3 text-muted">Gmail</h6>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'gmail:credentials' %}active{% endif %}"
+                               href="{% url 'gmail:credentials' %}">
+                                <i class="fas fa-key"></i> Credentials
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'gmail:statements' %}active{% endif %}"
+                               href="{% url 'gmail:statements' %}">
+                                <i class="fas fa-envelope"></i> Statements
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'gmail:transactions' %}active{% endif %}"
+                               href="{% url 'gmail:transactions' %}">
+                                <i class="fas fa-exchange-alt"></i> Transactions
+                            </a>
+                        </li>
+
+                        <li class="nav-item mt-3">
+                            <h6 class="sidebar-heading px-3 text-muted">Bridge</h6>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'bridge:categories' %}active{% endif %}"
+                               href="{% url 'bridge:categories' %}">
+                                <i class="fas fa-tags"></i> Categories
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'bridge:bulk_operations' %}active{% endif %}"
+                               href="{% url 'bridge:bulk_operations' %}">
+                                <i class="fas fa-tasks"></i> Bulk Operations
+                            </a>
+                        </li>
+
+                        <li class="nav-item mt-3">
+                            <h6 class="sidebar-heading px-3 text-muted">ERPNext</h6>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'erpnext:configs' %}active{% endif %}"
+                               href="{% url 'erpnext:configs' %}">
+                                <i class="fas fa-cog"></i> Configuration
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.view_name == 'erpnext:sync_logs' %}active{% endif %}"
+                               href="{% url 'erpnext:sync_logs' %}">
+                                <i class="fas fa-history"></i> Sync Logs
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+            {% endif %}
+
+            <main class="{% if request.user.is_authenticated %}col-md-10 ms-sm-auto{% else %}col-12{% endif %} px-md-4">
+                {% include 'components/flash_messages.html' %}
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="{% static 'dist/js/bootstrap.bundle.min.js' %}"></script>
+    <script src="{% static 'js/app.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

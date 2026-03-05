@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Bank Transactions - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-exchange-alt"></i> Bank Transactions</h1>
+    <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-primary">
+        <i class="fas fa-tasks"></i> Bulk Operations
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" action="{% url 'gmail:transactions' %}" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Filter</label>
+                <select name="uncategorized" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Transactions</option>
+                    <option value="1" {% if request.GET.uncategorized %}selected{% endif %}>Uncategorized Only</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Sync Status</label>
+                <select name="not_synced" class="form-select" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    <option value="1" {% if request.GET.not_synced %}selected{% endif %}>Not Synced to ERPNext</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Category</label>
+                <select name="category_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.pk }}"
+                            {% if request.GET.category_id == category.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ category.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <a href="{% url 'gmail:transactions' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-redo"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Total</h6>
+                <h3>{{ transactions.paginator.count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">This Page</h6>
+                <h3>{{ transactions|length }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if transactions %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th class="text-end">Amount</th>
+                        <th>Category</th>
+                        <th>ERPNext</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trans in transactions %}
+                    <tr>
+                        <td>{{ trans.date|date:"Y-m-d" }}</td>
+                        <td>{{ trans.description|truncatechars:60 }}</td>
+                        <td>
+                            {% if trans.transaction_type == 'debit' %}
+                                <span class="badge bg-danger"><i class="fas fa-arrow-down"></i> Debit</span>
+                            {% else %}
+                                <span class="badge bg-success"><i class="fas fa-arrow-up"></i> Credit</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <strong class="text-{% if trans.transaction_type == 'debit' %}danger{% else %}success{% endif %}">
+                                R{{ trans.amount|floatformat:2 }}
+                            </strong>
+                        </td>
+                        <td>
+                            {% if trans.category %}
+                                <span class="badge bg-info">{{ trans.category.name }}</span>
+                            {% else %}
+                                <form method="POST"
+                                      action="{% url 'bridge:categorize_transaction' trans.pk %}"
+                                      class="d-inline">
+                                    {% csrf_token %}
+                                    <select name="category_id"
+                                            class="form-select form-select-sm"
+                                            style="width:150px;display:inline-block;"
+                                            onchange="this.form.submit()">
+                                        <option value="">Select...</option>
+                                        {% for category in categories %}
+                                        <option value="{{ category.pk }}">{{ category.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if trans.erpnext_synced %}
+                                <span class="text-success"><i class="fas fa-check-circle"></i> Synced</span>
+                            {% else %}
+                                <span class="text-muted"><i class="fas fa-clock"></i> Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if trans.category and not trans.erpnext_synced %}
+                            <form method="POST"
+                                  action="{% url 'bridge:uncategorize_transaction' trans.pk %}"
+                                  style="display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-secondary btn-sm" title="Remove category">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% include 'components/pagination.html' with page=transactions %}
+
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    No transactions found. Import statements from Gmail or upload a CSV.
+</div>
+{% endif %}
+{% endblock %}

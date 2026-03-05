@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Email Statements - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-envelope"></i> Email Statements</h1>
+    <div>
+        <form method="POST" action="{% url 'gmail:import_statements' %}" style="display: inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-download"></i> Import from Gmail
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Statements</h6>
+                <h3>{{ statements.paginator.count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Parsed</h6>
+                <h3 class="text-success">{{ stats.parsed }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Pending</h6>
+                <h3 class="text-warning">{{ stats.pending }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">This Page</h6>
+                <h3>{{ statements.object_list|length }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if statements.object_list %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Bank</th>
+                        <th>Subject</th>
+                        <th>Sender</th>
+                        <th>Status</th>
+                        <th>Transactions</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for statement in statements.object_list %}
+                    <tr>
+                        <td>{{ statement.date|date:"Y-m-d"|default:"N/A" }}</td>
+                        <td><span class="badge bg-secondary">{{ statement.bank_name|upper }}</span></td>
+                        <td>
+                            <a href="{% url 'gmail:statement_detail' pk=statement.id %}">
+                                {{ statement.subject|truncatechars:50 }}
+                            </a>
+                        </td>
+                        <td><small class="text-muted">{{ statement.sender|truncatechars:30 }}</small></td>
+                        <td>
+                            {% if statement.state == 'parsed' %}
+                                <span class="badge bg-success"><i class="fas fa-check"></i> Parsed</span>
+                            {% elif statement.state == 'imported' %}
+                                <span class="badge bg-info"><i class="fas fa-cloud-download-alt"></i> Imported</span>
+                            {% else %}
+                                <span class="badge bg-secondary"><i class="fas fa-clock"></i> Draft</span>
+                            {% endif %}
+                            {% if statement.has_pdf %}
+                                <span class="badge bg-primary"><i class="fas fa-file-pdf"></i> PDF</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if statement.transaction_count > 0 %}
+                                <span class="badge bg-info">{{ statement.transaction_count }} transactions</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'gmail:statement_detail' pk=statement.id %}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if statements.paginator.num_pages > 1 %}
+<nav aria-label="Page navigation" class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not statements.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ statements.previous_page_number }}">Previous</a>
+        </li>
+        {% for page_num in statements.paginator.page_range %}
+            {% if page_num == statements.number %}
+                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
+            {% else %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_num }}">{{ page_num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not statements.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ statements.next_page_number }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i>
+    No statements found. Click "Import from Gmail" to fetch your bank statements.
+</div>
+{% endif %}
+{% endblock %}

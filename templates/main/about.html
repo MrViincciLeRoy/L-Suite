@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}About - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-info-circle"></i> About LSuite</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h3>Ledger Suite - Financial Integration Platform</h3>
+                <p class="lead">LSuite is a Django-based financial management system that integrates Gmail bank statements with ERPNext accounting.</p>
+                <hr>
+                <h4>Key Features</h4>
+                <div class="row">
+                    <div class="col-md-6">
+                        <ul>
+                            <li><strong>Gmail Integration</strong> - OAuth 2.0 secure authentication</li>
+                            <li><strong>PDF Parsing</strong> - Extract transactions from bank PDFs</li>
+                            <li><strong>Auto-Categorization</strong> - Keyword-based matching</li>
+                            <li><strong>ERPNext Sync</strong> - Seamless journal entry creation</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <ul>
+                            <li><strong>Multi-Bank Support</strong> - TymeBank, Capitec, and more</li>
+                            <li><strong>Bulk Operations</strong> - Process multiple transactions</li>
+                            <li><strong>CSV Import</strong> - Upload bank exports directly</li>
+                            <li><strong>Sync Logging</strong> - Full audit trail</li>
+                        </ul>
+                    </div>
+                </div>
+                <hr>
+                <h4>Technology Stack</h4>
+                <ul>
+                    <li><strong>Backend:</strong> Django, PostgreSQL</li>
+                    <li><strong>Frontend:</strong> Bootstrap 5, Font Awesome</li>
+                    <li><strong>APIs:</strong> Google Gmail API, ERPNext REST API</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header"><h5>Quick Links</h5></div>
+            <div class="list-group list-group-flush">
+                <a href="{% url 'main:index' %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-home"></i> Dashboard
+                </a>
+                <a href="{% url 'gmail:credentials' %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-key"></i> Gmail Credentials
+                </a>
+                <a href="{% url 'bridge:categories' %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-tags"></i> Categories
+                </a>
+                <a href="{% url 'erpnext:configs' %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-cog"></i> ERPNext Config
+                </a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><h5>Version Info</h5></div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-6">Version:</dt><dd class="col-sm-6">1.0.0</dd>
+                    <dt class="col-sm-6">Python:</dt><dd class="col-sm-6">3.9+</dd>
+                    <dt class="col-sm-6">Django:</dt><dd class="col-sm-6">4.x</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Operations - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-tasks"></i> Bulk Operations</h1>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Total Transactions</h6>
+                <h3>{{ stats.total }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Uncategorized</h6>
+                <h3 class="text-warning">{{ stats.uncategorized }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Ready to Sync</h6>
+                <h3 class="text-info">{{ stats.ready_to_sync }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted">Synced</h6>
+                <h3 class="text-success">{{ stats.synced }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-magic"></i> Auto-Categorization</h5>
+            </div>
+            <div class="card-body">
+                <p>Automatically categorize transactions based on keywords defined in categories.</p>
+                <dl class="row">
+                    <dt class="col-sm-6">Uncategorized:</dt>
+                    <dd class="col-sm-6"><strong>{{ stats.uncategorized }}</strong> transactions</dd>
+                    <dt class="col-sm-6">Categories:</dt>
+                    <dd class="col-sm-6"><strong>{{ stats.categories|default:"N/A" }}</strong> active</dd>
+                </dl>
+                {% if stats.uncategorized > 0 %}
+                <form method="POST" action="{% url 'bridge:auto_categorize' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-primary w-100"
+                            onclick="return confirm('This will auto-categorize {{ stats.uncategorized }} uncategorized transactions. Continue?')">
+                        <i class="fas fa-magic"></i> Auto-Categorize All ({{ stats.uncategorized }})
+                    </button>
+                </form>
+                {% else %}
+                <div class="alert alert-success mb-0">
+                    <i class="fas fa-check-circle"></i> All transactions are categorized!
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-cloud-upload-alt"></i> ERPNext Sync</h5>
+            </div>
+            <div class="card-body">
+                <p>Sync categorized transactions to ERPNext as journal entries.</p>
+                <dl class="row">
+                    <dt class="col-sm-6">Ready to Sync:</dt>
+                    <dd class="col-sm-6"><strong>{{ stats.ready_to_sync }}</strong> transactions</dd>
+                    <dt class="col-sm-6">ERPNext Status:</dt>
+                    <dd class="col-sm-6">
+                        {% if erpnext_config %}
+                            <span class="badge bg-success">Connected</span>
+                        {% else %}
+                            <span class="badge bg-danger">Not Configured</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+                {% if erpnext_config %}
+                    {% if stats.ready_to_sync > 0 %}
+                    <form method="POST" action="{% url 'bridge:bulk_sync' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success w-100"
+                                onclick="return confirm('This will sync {{ stats.ready_to_sync }} transactions to ERPNext. Continue?')">
+                            <i class="fas fa-cloud-upload-alt"></i> Sync to ERPNext ({{ stats.ready_to_sync }})
+                        </button>
+                    </form>
+                    {% else %}
+                    <div class="alert alert-info mb-0">
+                        <i class="fas fa-info-circle"></i> No transactions ready to sync. Categorize transactions first.
+                    </div>
+                    {% endif %}
+                {% else %}
+                <div class="alert alert-warning mb-0">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <a href="{% url 'erpnext:configs' %}">Configure ERPNext</a> to enable syncing.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if erpnext_config %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5><i class="fas fa-server"></i> ERPNext Configuration</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <dl class="row">
+                    <dt class="col-sm-5">Configuration:</dt>
+                    <dd class="col-sm-7">{{ erpnext_config.name }}</dd>
+                    <dt class="col-sm-5">Company:</dt>
+                    <dd class="col-sm-7">{{ erpnext_config.default_company }}</dd>
+                    <dt class="col-sm-5">Bank Account:</dt>
+                    <dd class="col-sm-7"><small>{{ erpnext_config.bank_account }}</small></dd>
+                </dl>
+            </div>
+            <div class="col-md-6">
+                <dl class="row">
+                    <dt class="col-sm-5">Base URL:</dt>
+                    <dd class="col-sm-7"><small class="text-muted">{{ erpnext_config.base_url }}</small></dd>
+                    <dt class="col-sm-5">Last Sync:</dt>
+                    <dd class="col-sm-7">
+                        {% if erpnext_config.last_sync %}
+                            {{ erpnext_config.last_sync|date:"Y-m-d H:i" }}
+                        {% else %}
+                            <span class="text-muted">Never</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if recent_transactions %}
+<div class="card">
+    <div class="card-header">
+        <h5><i class="fas fa-clock"></i> Recent Transactions</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trans in recent_transactions %}
+                    <tr>
+                        <td>{{ trans.date }}</td>
+                        <td>{{ trans.description|truncatechars:40 }}</td>
+                        <td class="text-{{ trans.transaction_type|yesno:'danger,success,info' }}">
+                            R{{ trans.amount|floatformat:2 }}
+                        </td>
+                        <td>
+                            {% if trans.category %}
+                                <span class="badge bg-info">{{ trans.category.name }}</span>
+                            {% else %}
+                                <span class="text-muted">Uncategorized</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if trans.erpnext_synced %}
+                                <span class="text-success"><i class="fas fa-check"></i> Synced</span>
+                            {% elif trans.category %}
+                                <span class="text-warning"><i class="fas fa-clock"></i> Pending</span>
+                            {% else %}
+                                <span class="text-muted"><i class="fas fa-minus"></i> Not Ready</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

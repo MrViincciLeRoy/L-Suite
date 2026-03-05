@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - LSuite{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h5 class="card-title">Statements</h5>
+                    <p class="card-text display-6">{{ stats.statements }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-white bg-info">
+                <div class="card-body">
+                    <h5 class="card-title">Transactions</h5>
+                    <p class="card-text display-6">{{ stats.transactions }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <h5 class="card-title">Categorized</h5>
+                    <p class="card-text display-6">{{ stats.categorized }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-white bg-warning">
+                <div class="card-body">
+                    <h5 class="card-title">Synced</h5>
+                    <p class="card-text display-6">{{ stats.synced }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Statements</h5>
+                    <a href="{% url 'gmail:statements' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_statements %}
+                    <div class="list-group list-group-flush">
+                        {% for statement in recent_statements %}
+                        <a href="{% url 'gmail:statement_detail' pk=statement.id %}"
+                           class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ statement.subject|truncatechars:50 }}</h6>
+                                <small>{{ statement.received_date|date:"Y-m-d"|default:"N/A" }}</small>
+                            </div>
+                            <p class="mb-1 small text-muted">{{ statement.sender }}</p>
+                            <small>
+                                <span class="badge bg-info">{{ statement.bank_name }}</span>
+                                {% if statement.state == 'parsed' %}
+                                    <span class="badge bg-success">Parsed</span>
+                                {% elif statement.state == 'error' %}
+                                    <span class="badge bg-danger">Error</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ statement.state }}</span>
+                                {% endif %}
+                            </small>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="fas fa-inbox fa-2x mb-2"></i>
+                        <p class="mb-0">No statements yet</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Transactions</h5>
+                    <a href="{% url 'gmail:transactions' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_transactions %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <tbody>
+                                {% for trans in recent_transactions %}
+                                <tr style="cursor: pointer;"
+                                    onclick="window.location='{% url 'gmail:transaction_detail' pk=trans.id %}'">
+                                    <td>{{ trans.date|date:"Y-m-d" }}</td>
+                                    <td>
+                                        <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            {{ trans.description }}
+                                        </div>
+                                    </td>
+                                    <td class="text-end">
+                                        {% if trans.withdrawal %}
+                                            <span class="text-danger">-R{{ trans.withdrawal|floatformat:2 }}</span>
+                                        {% elif trans.deposit %}
+                                            <span class="text-success">+R{{ trans.deposit|floatformat:2 }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <i class="fas fa-exchange-alt fa-2x mb-2"></i>
+                        <p class="mb-0">No transactions yet</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 mb-2">
+                            <a href="{% url 'gmail:statements' %}" class="btn btn-outline-primary w-100">
+                                <i class="fas fa-file-invoice"></i> View Statements
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{% url 'gmail:transactions' %}?uncategorized=1" class="btn btn-outline-warning w-100">
+                                <i class="fas fa-tags"></i> Categorize Transactions
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-outline-success w-100">
+                                <i class="fas fa-sync"></i> Sync to ERPNext
+                            </a>
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <a href="{% url 'gmail:upload_pdf' %}" class="btn btn-outline-info w-100">
+                                <i class="fas fa-upload"></i> Upload PDF
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

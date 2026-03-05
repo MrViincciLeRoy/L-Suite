@@ -1,0 +1,20 @@
+{# Usage: {% include 'components/pagination.html' with page=page url_name='app:view' %} #}
+{% if page.paginator.num_pages > 1 %}
+<nav aria-label="Page navigation" class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if not page.has_previous %}disabled{% endif %}">
+            <a class="page-link" href="?page={% if page.has_previous %}{{ page.previous_page_number }}{% else %}1{% endif %}">Previous</a>
+        </li>
+        {% for num in page.paginator.page_range %}
+            {% if num == page.number %}
+            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% elif num > page.number|add:'-3' and num < page.number|add:'3' %}
+            <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not page.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={% if page.has_next %}{{ page.next_page_number }}{% else %}{{ page.paginator.num_pages }}{% endif %}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}

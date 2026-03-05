@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Upload PDF Statements - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-file-pdf text-danger"></i> Upload PDF Statements</h1>
+    <div class="d-flex gap-2">
+        <a href="{% url 'gmail:pdf_import_history' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-history"></i> Job History
+        </a>
+        <a href="{% url 'gmail:transactions' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-upload"></i> Upload Bank PDF(s)</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                    {% csrf_token %}
+
+                    <!-- Drop zone -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Select PDF File(s) *</label>
+                        <div id="dropZone"
+                             class="border border-2 border-dashed rounded p-5 text-center"
+                             style="border-color:#6c757d;cursor:pointer;transition:all .2s;"
+                             onclick="document.getElementById('pdf_files').click()">
+                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3 d-block"></i>
+                            <p class="mb-1 fw-semibold">Click to select or drag &amp; drop PDFs here</p>
+                            <p class="text-muted small mb-0">Multiple files supported — all processed as one job</p>
+                        </div>
+                        <input type="file" id="pdf_files" name="pdf_files"
+                               accept=".pdf" multiple class="d-none" required>
+                        <div id="fileList" class="mt-2"></div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="bank_name" class="form-label fw-semibold">Bank</label>
+                            <select class="form-select" id="bank_name" name="bank_name">
+                                <option value="capitec" selected>Capitec</option>
+                                <option value="tymebank">TymeBank</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="pdf_password" class="form-label fw-semibold">
+                                PDF Password <span class="text-muted fw-normal">(if protected)</span>
+                            </label>
+                            <input type="password" class="form-control" id="pdf_password"
+                                   name="pdf_password" placeholder="Leave blank if none">
+                            <div class="form-text">Common: ID number or last 4 digits of account</div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-danger w-100 py-2" id="submitBtn">
+                        <i class="fas fa-cogs"></i> Start Processing
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent jobs on this page -->
+        {% if recent_jobs %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-clock"></i> Recent Jobs</h5>
+                <a href="{% url 'gmail:pdf_import_history' %}" class="btn btn-sm btn-outline-primary">
+                    View All
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>File(s)</th>
+                                <th>Bank</th>
+                                <th>Status</th>
+                                <th>Saved</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in recent_jobs %}
+                            <tr>
+                                <td class="text-truncate" style="max-width:220px;"
+                                    title="{{ job.filename }}">{{ job.filename }}</td>
+                                <td>{{ job.bank_name }}</td>
+                                <td>{% include 'gmail/_job_badge.html' with job=job %}</td>
+                                <td>{{ job.transactions_saved }}</td>
+                                <td>
+                                    <a href="{% url 'gmail:pdf_import_progress' job.pk %}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card bg-light mb-3">
+            <div class="card-header"><h5><i class="fas fa-info-circle"></i> How It Works</h5></div>
+            <div class="card-body">
+                <ol class="ps-3 small mb-0">
+                    <li class="mb-2">Select one or more bank statement PDFs</li>
+                    <li class="mb-2">Choose the bank and enter password if the PDF is protected</li>
+                    <li class="mb-2">Click <strong>Start Processing</strong> — you'll be taken to a live progress page</li>
+                    <li class="mb-2">You can navigate away and come back anytime — the job runs in the background</li>
+                    <li>Duplicates are automatically skipped</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header"><h5><i class="fas fa-university"></i> Supported Banks</h5></div>
+            <div class="card-body small">
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2">✓</span>
+                    <strong>Capitec</strong>&nbsp;— full support
+                </div>
+                <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-success me-2">✓</span>
+                    <strong>TymeBank</strong>&nbsp;— full support
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="badge bg-warning me-2">~</span>
+                    <strong>Other</strong>&nbsp;— generic parser (may vary)
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-warning small">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Tip:</strong> If your PDF is password-protected and the password fails, the file will be marked as errored. You can re-upload with the correct password.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('pdf_files');
+const fileList = document.getElementById('fileList');
+const submitBtn = document.getElementById('submitBtn');
+
+function renderFileList(files) {
+    if (!files.length) { fileList.innerHTML = ''; return; }
+    let html = '<ul class="list-group list-group-flush mt-2">';
+    for (const f of files) {
+        const kb = (f.size / 1024).toFixed(1);
+        html += `<li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
+            <span><i class="fas fa-file-pdf text-danger me-1"></i>${f.name}</span>
+            <small class="text-muted">${kb} KB</small>
+        </li>`;
+    }
+    html += '</ul>';
+    fileList.innerHTML = html;
+    dropZone.style.borderColor = '#198754';
+    dropZone.style.background = '#f0fff4';
+}
+
+fileInput.addEventListener('change', () => renderFileList([...fileInput.files]));
+
+dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#0d6efd';
+    dropZone.style.background = '#f0f4ff';
+});
+dropZone.addEventListener('dragleave', () => {
+    dropZone.style.borderColor = '#6c757d';
+    dropZone.style.background = '';
+});
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#198754';
+    dropZone.style.background = '#f0fff4';
+    // Transfer dropped files to the input
+    const dt = new DataTransfer();
+    for (const f of e.dataTransfer.files) {
+        if (f.name.endsWith('.pdf')) dt.items.add(f);
+    }
+    fileInput.files = dt.files;
+    renderFileList([...fileInput.files]);
+});
+
+document.getElementById('uploadForm').addEventListener('submit', () => {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading…';
+});
+</script>
+{% endblock %}

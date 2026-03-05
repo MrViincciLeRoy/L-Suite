@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}PDF Import Progress - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-cogs"></i> PDF Import Progress</h1>
+    <div class="d-flex gap-2">
+        <a href="{% url 'gmail:upload_pdf' %}" class="btn btn-outline-danger">
+            <i class="fas fa-file-pdf"></i> New Upload
+        </a>
+        <a href="{% url 'gmail:pdf_import_history' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-history"></i> All Jobs
+        </a>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+
+        <!-- Status card -->
+        <div class="card mb-4" id="statusCard">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <span id="statusIcon"><i class="fas fa-spinner fa-spin text-primary"></i></span>
+                    &nbsp;<span id="statusText">Processing…</span>
+                </h5>
+                <span id="statusBadge" class="badge bg-primary">{{ job.status|capfirst }}</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    <i class="fas fa-file-pdf text-danger"></i>
+                    <strong>{{ job.filename }}</strong>
+                    &nbsp;&bull;&nbsp;
+                    <span class="text-capitalize">{{ job.bank_name }}</span>
+                    &nbsp;&bull;&nbsp;
+                    Started {{ job.created_at|date:"Y-m-d H:i" }}
+                </p>
+
+                <!-- Progress bar -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>Files: <strong id="filesProgress">{{ job.processed_files }}/{{ job.total_files }}</strong></small>
+                        <small id="pctLabel">{{ job.progress }}%</small>
+                    </div>
+                    <div class="progress" style="height:20px;">
+                        <div id="progressBar"
+                             class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar"
+                             style="width:{{ job.progress }}%">
+                            {{ job.progress }}%
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats row -->
+                <div class="row text-center" id="statsRow">
+                    <div class="col-4">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <div class="h4 mb-0" id="statFound">{{ job.transactions_found }}</div>
+                                <small class="text-muted">Found</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card bg-success text-white">
+                            <div class="card-body py-2">
+                                <div class="h4 mb-0" id="statSaved">{{ job.transactions_saved }}</div>
+                                <small>Saved</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="card bg-warning">
+                            <div class="card-body py-2">
+                                <div class="h4 mb-0" id="statSkipped">{{ job.transactions_skipped }}</div>
+                                <small>Skipped</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error box (hidden unless failed) -->
+                <div id="errorBox" class="alert alert-danger mt-3 d-none">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Error:</strong> <span id="errorMsg"></span>
+                </div>
+            </div>
+
+            <!-- Footer actions (shown when done or failed) -->
+            <div id="cardFooter" class="card-footer d-none">
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{% url 'gmail:transactions' %}" class="btn btn-success">
+                        <i class="fas fa-exchange-alt"></i> View Transactions
+                    </a>
+                    <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-primary">
+                        <i class="fas fa-tasks"></i> Bulk Operations
+                    </a>
+                    <a href="{% url 'gmail:upload_pdf' %}" class="btn btn-outline-danger">
+                        <i class="fas fa-file-pdf"></i> Upload Another
+                    </a>
+                    {% if job.statement_id %}
+                    <a href="{% url 'gmail:statement_detail' job.statement_id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-file-invoice"></i> View Statement
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Instruction card while running -->
+        <div class="card bg-light" id="runningTip">
+            <div class="card-body">
+                <h6><i class="fas fa-lightbulb text-warning"></i> You can leave this page</h6>
+                <p class="small mb-0">
+                    The import runs in the background. Come back to
+                    <a href="{% url 'gmail:pdf_import_history' %}">Job History</a>
+                    anytime to check progress or pick up where you left off.
+                </p>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const STATUS_URL = "{% url 'gmail:pdf_import_status' job.pk %}";
+const POLL_INTERVAL = 2500; // ms
+let pollTimer = null;
+let statementId = {{ job.statement_id|default:"null" }};
+
+function setStatus(data) {
+    const done   = data.status === 'done';
+    const failed = data.status === 'failed';
+    const active = data.status === 'processing' || data.status === 'pending';
+
+    // Progress bar
+    const bar = document.getElementById('progressBar');
+    bar.style.width = data.progress + '%';
+    bar.textContent = data.progress + '%';
+    if (done)   { bar.classList.remove('progress-bar-animated', 'bg-danger'); bar.classList.add('bg-success'); }
+    if (failed) { bar.classList.remove('progress-bar-animated'); bar.classList.add('bg-danger'); }
+
+    document.getElementById('pctLabel').textContent = data.progress + '%';
+    document.getElementById('filesProgress').textContent = data.processed_files + '/' + data.total_files;
+
+    // Stats
+    document.getElementById('statFound').textContent   = data.transactions_found;
+    document.getElementById('statSaved').textContent   = data.transactions_saved;
+    document.getElementById('statSkipped').textContent = data.transactions_skipped;
+
+    // Badge & icon
+    const badge = document.getElementById('statusBadge');
+    const icon  = document.getElementById('statusIcon');
+    const text  = document.getElementById('statusText');
+
+    if (done) {
+        badge.className = 'badge bg-success';
+        badge.textContent = 'Done';
+        icon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+        text.textContent = 'Import complete!';
+    } else if (failed) {
+        badge.className = 'badge bg-danger';
+        badge.textContent = 'Failed';
+        icon.innerHTML = '<i class="fas fa-times-circle text-danger"></i>';
+        text.textContent = 'Import failed';
+    } else {
+        badge.className = 'badge bg-primary';
+        badge.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+        icon.innerHTML = '<i class="fas fa-spinner fa-spin text-primary"></i>';
+        text.textContent = 'Processing…';
+    }
+
+    // Error message
+    if (data.error_message) {
+        document.getElementById('errorBox').classList.remove('d-none');
+        document.getElementById('errorMsg').textContent = data.error_message;
+    }
+
+    // Footer actions
+    if (done || failed) {
+        document.getElementById('cardFooter').classList.remove('d-none');
+        document.getElementById('runningTip').classList.add('d-none');
+
+        // Patch statement link dynamically
+        if (data.statement_id && !statementId) {
+            statementId = data.statement_id;
+            const footer = document.getElementById('cardFooter').querySelector('.d-flex');
+            footer.insertAdjacentHTML('beforeend',
+                `<a href="/gmail/statements/${data.statement_id}/" class="btn btn-outline-secondary">
+                    <i class="fas fa-file-invoice"></i> View Statement
+                 </a>`
+            );
+        }
+
+        clearInterval(pollTimer);
+    }
+}
+
+function poll() {
+    fetch(STATUS_URL)
+        .then(r => r.json())
+        .then(setStatus)
+        .catch(() => {}); // silently ignore network hiccups
+}
+
+// Only poll if not already finished on page load
+{% if job.status == 'pending' or job.status == 'processing' %}
+poll(); // immediate first call
+pollTimer = setInterval(poll, POLL_INTERVAL);
+{% else %}
+// Already done — just show footer
+document.getElementById('cardFooter').classList.remove('d-none');
+document.getElementById('runningTip').classList.add('d-none');
+{% if job.status == 'done' %}
+document.getElementById('progressBar').classList.remove('progress-bar-animated');
+document.getElementById('progressBar').classList.add('bg-success');
+{% elif job.status == 'failed' %}
+document.getElementById('progressBar').classList.remove('progress-bar-animated');
+document.getElementById('progressBar').classList.add('bg-danger');
+{% if job.error_message %}
+document.getElementById('errorBox').classList.remove('d-none');
+document.getElementById('errorMsg').textContent = "{{ job.error_message|escapejs }}";
+{% endif %}
+{% endif %}
+{% endif %}
+</script>
+{% endblock %}
