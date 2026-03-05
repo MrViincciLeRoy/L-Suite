@@ -1,0 +1,12 @@
+django>=5.2
+gunicorn
+whitenoise
+mysqlclient
+dj-database-url
+python-dotenv
+requests
+google-auth
+google-auth-oauthlib
+google-api-python-client
+PyPDF2
+pytz
