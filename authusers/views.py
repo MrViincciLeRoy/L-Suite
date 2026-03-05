@@ -9,10 +9,10 @@ def register_view(request):
         if form.is_valid():
             user = form.save()
             login(request, user)
-            return redirect('main:index')
+            return redirect('/index/')
     else:
         form = UserCreationForm()
-        return render(request, 'auth/register.html', {'form': form})
+    return render(request, 'auth/register.html', {'form': form})
 
 def login_view(request):
     if request.method == 'POST':
@@ -20,14 +20,16 @@ def login_view(request):
         if form.is_valid():
             user = form.get_user()
             login(request, user)
-            return redirect('main:index')
+            next_url = request.GET.get('next', '/index/')
+            return redirect(next_url)
     else:
         form = AuthenticationForm()
-        return render(request, 'auth/login.html', {'form': form})
+    return render(request, 'auth/login.html', {'form': form})
+
 def logout_view(request):
     logout(request)
     return redirect('authusers:login')
 
 @login_required
-def profile(request):   
+def profile(request):
     return render(request, 'auth/profile.html')
