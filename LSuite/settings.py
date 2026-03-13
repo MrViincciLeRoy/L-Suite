@@ -6,7 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-me-in-production')
 
-DEBUG = True 
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -62,19 +62,9 @@ WSGI_APPLICATION = "LSuite.wsgi.application"
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 if DATABASE_URL:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': 'defaultdb',
-            'USER': 'avnadmin',
-            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': 'mysql-28e71a56-leroyviincci-9a05.a.aivencloud.com',
-            'PORT': '18832',
-            'OPTIONS': {
-                'ssl': {'ssl_disabled': False},
-            },
-        }
-    }
+    db_config = dj_database_url.parse(DATABASE_URL)
+    db_config['OPTIONS'] = {'ssl': {'ssl_disabled': False}}
+    DATABASES = {'default': db_config}
 else:
     DATABASES = {
         "default": {
