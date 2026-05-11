@@ -1,26 +1,10 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import User
 from django.utils import timezone
-from django.contrib.auth.models import User 
 
-'''
-class User(AbstractUser):
-    is_admin = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    @property
-    def full_name(self):
-        if self.first_name and self.last_name:
-            return f"{self.first_name} {self.last_name}"
-        return self.username
-
-    class Meta:
-        db_table = 'users'
-'''
 
 class BankAccount(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_accounts',default='user')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_accounts', default='user')
     account_name = models.CharField(max_length=200)
     account_number = models.CharField(max_length=100, blank=True)
     bank_name = models.CharField(max_length=100, blank=True)
@@ -40,9 +24,14 @@ class BankAccount(models.Model):
 
 class TransactionCategory(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    erpnext_account = models.CharField(max_length=200,null=True, blank=True)
+    erpnext_account = models.CharField(max_length=200, null=True, blank=True)
     transaction_type = models.CharField(max_length=20)
     keywords = models.TextField(blank=True)
+    tags = models.TextField(
+        blank=True,
+        default='',
+        help_text='Comma-separated merchant/brand names learned from AI matches (e.g. netflix,uber,woolworths)',
+    )
     active = models.BooleanField(default=True)
     color = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -50,12 +39,27 @@ class TransactionCategory(models.Model):
     def get_keywords_list(self):
         if not self.keywords:
             return []
-        return [k.strip().lower() for k in self.keywords.split(',')]
+        return [k.strip().lower() for k in self.keywords.split(',') if k.strip()]
+
+    def get_tags_list(self):
+        if not self.tags:
+            return []
+        return [t.strip().lower() for t in self.tags.split(',') if t.strip()]
+
+    def add_tag(self, tag: str):
+        tag = tag.lower().strip()
+        existing = self.get_tags_list()
+        if tag and tag not in existing:
+            existing.append(tag)
+            self.tags = ','.join(existing)
+            self.save(update_fields=['tags'])
 
     def matches_description(self, description):
         if not description:
             return False
-        return any(kw in description.lower() for kw in self.get_keywords_list())
+        desc = description.lower()
+        return any(kw in desc for kw in self.get_keywords_list()) or \
+               any(tag in desc for tag in self.get_tags_list())
 
     def __str__(self):
         return self.name
@@ -186,12 +190,12 @@ class InvoiceItem(models.Model):
 
 
 class BankTransaction(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_transactions',default='user')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_transactions', default='user')
     bank_account = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
     statement = models.ForeignKey(EmailStatement, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
     invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
     date = models.DateField(db_index=True)
-    transaction_type =  models.CharField(max_length=100, blank=True, db_index=True)
+    transaction_type = models.CharField(max_length=100, blank=True, db_index=True)
     amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     fee = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     posting_date = models.DateField(null=True, blank=True, db_index=True)
@@ -215,7 +219,6 @@ class BankTransaction(models.Model):
     erpnext_error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
 
     def to_erpnext_format(self):
         return {
@@ -273,7 +276,7 @@ class ERPNextSyncLog(models.Model):
 
     class Meta:
         db_table = 'erpnext_sync_logs'
-    
+
 
 class PDFImportJob(models.Model):
     STATUS_PENDING = 'pending'
