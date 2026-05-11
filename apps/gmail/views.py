@@ -75,14 +75,16 @@ def delete_credential(request, pk):
         messages.success(request, 'Credential deleted.')
     return redirect(reverse('gmail:credentials'))
 
-
 @login_required
 def statements(request):
     stmts_qs = EmailStatement.objects.filter(user=request.user).order_by('-received_date')
     paginator = Paginator(stmts_qs, ITEMS_PER_PAGE)
     page = paginator.get_page(request.GET.get('page', 1))
-    return render(request, 'gmail/statements.html', {'statements': page})
-
+    stats = {
+        'parsed': stmts_qs.filter(state='parsed').count(),
+        'pending': stmts_qs.exclude(state='parsed').count(),
+    }
+    return render(request, 'gmail/statements.html', {'statements': page, 'stats': stats})
 
 @login_required
 def import_statements(request):
