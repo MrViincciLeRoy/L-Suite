@@ -21,12 +21,12 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "api",
-    "authusers",
-    "bridge",
-    "erpnext",
-    "gmail",
-    "main",
+    "apps.api",
+    "apps.authusers",
+    "apps.bridge",
+    "apps.erpnext",
+    "apps.gmail",
+    "apps.main",
 ]
 
 MIDDLEWARE = [

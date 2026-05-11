@@ -1,0 +1,19 @@
+# Database
+db.sqlite3
+
+# Static files
+staticfiles/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.env
+*.env
+
+# migrations (optional - remove if you want to commit migrations)
+# */migrations/
+
