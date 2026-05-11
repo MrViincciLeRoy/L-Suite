@@ -6,6 +6,7 @@ from datetime import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -75,9 +76,28 @@ def delete_credential(request, pk):
         messages.success(request, 'Credential deleted.')
     return redirect(reverse('gmail:credentials'))
 
+
 @login_required
 def statements(request):
-    stmts_qs = EmailStatement.objects.filter(user=request.user).order_by('-received_date')
+    stmts_qs = EmailStatement.objects.filter(user=request.user).annotate(
+        # Credit: sum deposit field OR credit-type amount
+        total_credits=Sum(
+            'bank_transactions__deposit',
+            filter=Q(bank_transactions__deposit__isnull=False)
+        ) or Sum(
+            'bank_transactions__amount',
+            filter=Q(bank_transactions__transaction_type='credit')
+        ),
+        # Debit: sum withdrawal field OR debit-type amount
+        total_debits=Sum(
+            'bank_transactions__withdrawal',
+            filter=Q(bank_transactions__withdrawal__isnull=False)
+        ) or Sum(
+            'bank_transactions__amount',
+            filter=Q(bank_transactions__transaction_type='debit')
+        ),
+    ).order_by('-received_date')
+
     paginator = Paginator(stmts_qs, ITEMS_PER_PAGE)
     page = paginator.get_page(request.GET.get('page', 1))
     stats = {
@@ -85,6 +105,7 @@ def statements(request):
         'pending': stmts_qs.exclude(state='parsed').count(),
     }
     return render(request, 'gmail/statements.html', {'statements': page, 'stats': stats})
+
 
 @login_required
 def import_statements(request):
