@@ -1,0 +1,77 @@
+name: Recategorize Junk
+
+on:
+  workflow_dispatch:
+
+jobs:
+  recategorize:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Recategorize junk categories
+        run: |
+          python manage.py shell << 'EOF'
+          from apps.main.models import BankTransaction, TransactionCategory
+
+          # Categories with no real keywords — treat as uncategorized
+          JUNK_CATEGORY_IDS = [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+
+          good_categories = list(TransactionCategory.objects.exclude(
+              id__in=JUNK_CATEGORY_IDS
+          ).filter(active=True))
+
+          print(f"Good categories with keywords: {[c.name for c in good_categories]}")
+
+          # Pull all transactions in junk categories
+          junk_txns = BankTransaction.objects.filter(
+              category_id__in=JUNK_CATEGORY_IDS,
+              erpnext_synced=False,
+          )
+          print(f"\nTransactions in junk categories: {junk_txns.count()}")
+
+          recategorized = 0
+          reset = 0
+
+          for txn in junk_txns:
+              if not txn.description:
+                  continue
+              desc = txn.description.lower()
+              matched = None
+              for cat in good_categories:
+                  if cat.matches_description(desc):
+                      matched = cat
+                      break
+              if matched:
+                  txn.category = matched
+                  txn.save()
+                  recategorized += 1
+                  print(f"  [{txn.id}] '{txn.description[:50]}' -> {matched.name}")
+              else:
+                  # No keyword match — set to null so AI can pick it up later
+                  txn.category = None
+                  txn.save()
+                  reset += 1
+
+          print(f"\n=== RESULT ===")
+          print(f"  Recategorized: {recategorized}")
+          print(f"  Reset to null (no keyword match): {reset}")
+          print(f"  Total processed: {recategorized + reset}")
+
+          print(f"\n=== FINAL COUNTS ===")
+          print(f"  Uncategorized: {BankTransaction.objects.filter(category__isnull=True).count()}")
+          print(f"  Categorized:   {BankTransaction.objects.filter(category__isnull=False).count()}")
+          EOF
