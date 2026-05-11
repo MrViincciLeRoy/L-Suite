@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 ITEMS_PER_PAGE = 20
 
 
-# ── OAuth ──────────────────────────────────────────────────────────────────────
-
 @login_required
 def credentials(request):
     creds = GoogleCredential.objects.filter(user=request.user)
@@ -56,20 +54,16 @@ def authorize(request, pk):
 def oauth_callback(request):
     code = request.GET.get('code')
     state = request.GET.get('state')
-
     if not code or not state:
         messages.error(request, 'OAuth authorization failed.')
         return redirect(reverse('gmail:credentials'))
-
     credential = get_object_or_404(GoogleCredential, pk=int(state), user=request.user)
     service = GmailService()
     success = service.exchange_code_for_tokens(credential, code, request)
-
     if success:
         messages.success(request, 'Gmail access authorized!')
     else:
         messages.error(request, 'Authorization failed.')
-
     return redirect(reverse('gmail:credentials'))
 
 
@@ -81,8 +75,6 @@ def delete_credential(request, pk):
         messages.success(request, 'Credential deleted.')
     return redirect(reverse('gmail:credentials'))
 
-
-# ── Statements ─────────────────────────────────────────────────────────────────
 
 @login_required
 def statements(request):
@@ -99,7 +91,6 @@ def import_statements(request):
         if not credential:
             messages.error(request, 'No authenticated Google credential found.')
             return redirect(reverse('gmail:credentials'))
-
         try:
             service = GmailService()
             imported, skipped = service.fetch_statements(credential)
@@ -107,7 +98,6 @@ def import_statements(request):
         except Exception as e:
             messages.error(request, f'Import failed: {e}')
             logger.error(f"Statement import error: {e}")
-
     return redirect(reverse('gmail:statements'))
 
 
@@ -124,7 +114,6 @@ def statement_detail(request, pk):
 @login_required
 def parse_statement(request, pk):
     statement = get_object_or_404(EmailStatement, pk=pk, user=request.user)
-
     if request.method == 'POST':
         credential = GoogleCredential.objects.filter(user=request.user, is_authenticated=True).first()
         if not credential:
@@ -145,11 +134,9 @@ def parse_statement(request, pk):
         try:
             service = GmailService()
             count = service.download_and_parse_pdf(credential, statement)
-
             if not save_password and pdf_password:
                 statement.pdf_password = old_password
                 statement.save()
-
             messages.success(request, f'Extracted {count} transactions.')
         except ValueError as e:
             error_msg = str(e)
@@ -164,12 +151,9 @@ def parse_statement(request, pk):
     return redirect(reverse('gmail:statement_detail', kwargs={'pk': pk}))
 
 
-# ── Transactions ───────────────────────────────────────────────────────────────
-
 @login_required
 def transactions(request):
     qs = BankTransaction.objects.filter(user=request.user)
-
     if request.GET.get('uncategorized'):
         qs = qs.filter(category__isnull=True)
     if request.GET.get('not_synced'):
@@ -182,7 +166,6 @@ def transactions(request):
     qs = qs.order_by('-date')
     paginator = Paginator(qs, ITEMS_PER_PAGE)
     page = paginator.get_page(request.GET.get('page', 1))
-
     categories = TransactionCategory.objects.filter(active=True)
     return render(request, 'gmail/transactions.html', {
         'transactions': page,
@@ -193,31 +176,28 @@ def transactions(request):
 @login_required
 def transaction_detail(request, pk):
     transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
-    return render(request, 'gmail/transaction_detail.html', {'transaction': transaction})
+    categories = TransactionCategory.objects.filter(active=True)
+    return render(request, 'gmail/transaction_detail.html', {
+        'transaction': transaction,
+        'categories': categories,
+    })
 
-
-# ── CSV Upload ─────────────────────────────────────────────────────────────────
 
 @login_required
 def upload_csv(request):
     if request.method == 'POST':
         csv_file = request.FILES.get('csv_file')
-
         if not csv_file:
             messages.warning(request, 'No file selected.')
             return redirect(request.path)
-
         if not csv_file.name.endswith('.csv'):
             messages.warning(request, 'Please upload a CSV file.')
             return redirect(request.path)
-
         try:
             csv_data = csv_file.read()
             create_statement = request.POST.get('create_statement') == 'on'
-
             parser = CSVParser()
             parsed = parser.parse_csv(csv_data)
-
             if not parsed:
                 messages.warning(request, 'No valid transactions found in CSV.')
                 return redirect(request.path)
@@ -241,19 +221,16 @@ def upload_csv(request):
                     user=request.user,
                     date=td['transaction_date'],
                     description=td['description'],
-                ).filter(
-                    withdrawal=td['debits']
+                    withdrawal=td['debits'],
                 ).exists() or BankTransaction.objects.filter(
                     user=request.user,
                     date=td['transaction_date'],
                     description=td['description'],
                     deposit=td['credits'],
                 ).exists()
-
                 if exists:
                     skipped += 1
                     continue
-
                 BankTransaction.objects.create(
                     user=request.user,
                     statement=statement,
@@ -269,7 +246,6 @@ def upload_csv(request):
 
             messages.success(request, f'Imported {imported} transactions ({skipped} skipped).')
             return redirect(reverse('gmail:transactions'))
-
         except Exception as e:
             messages.error(request, f'Error importing CSV: {e}')
             logger.error(f"CSV import error: {e}", exc_info=True)
@@ -315,10 +291,8 @@ def bulk_csv_import(request):
                     is_processed=True,
                     has_pdf=False,
                 )
-
                 parsed = parser.parse_csv(f.read())
                 imported, skipped = 0, 0
-
                 for td in parsed:
                     exists = BankTransaction.objects.filter(
                         user=request.user,
@@ -326,11 +300,9 @@ def bulk_csv_import(request):
                         description=td['description'],
                         withdrawal=td['debits'],
                     ).exists()
-
                     if exists:
                         skipped += 1
                         continue
-
                     BankTransaction.objects.create(
                         user=request.user,
                         statement=statement,
@@ -343,11 +315,9 @@ def bulk_csv_import(request):
                         reference_number=td['reference'],
                     )
                     imported += 1
-
                 total_imported += imported
                 total_skipped += skipped
                 files_processed += 1
-
             except Exception as e:
                 logger.error(f"Error processing {f.name}: {e}")
                 continue
@@ -357,8 +327,6 @@ def bulk_csv_import(request):
 
     return render(request, 'gmail/bulk_csv_import.html')
 
-
-# ── PDF Upload & Background Processing ────────────────────────────────────────
 
 def _run_pdf_job(job_id, pdf_bytes_list, filenames):
     from apps.main.models import BankTransaction, EmailStatement, PDFImportJob, TransactionCategory
@@ -371,9 +339,7 @@ def _run_pdf_job(job_id, pdf_bytes_list, filenames):
         job.save(update_fields=['status', 'total_files'])
 
         parser = PDFParser()
-        total_saved = 0
-        total_skipped = 0
-        total_found = 0
+        total_saved = total_skipped = total_found = 0
 
         for idx, (pdf_bytes, filename) in enumerate(zip(pdf_bytes_list, filenames), start=1):
             statement = EmailStatement.objects.create(
@@ -393,9 +359,7 @@ def _run_pdf_job(job_id, pdf_bytes_list, filenames):
             try:
                 transactions = parser.parse_pdf(pdf_bytes, job.bank_name, job.pdf_password or None)
                 total_found += len(transactions)
-
-                saved = 0
-                skipped = 0
+                saved = skipped = 0
 
                 for t in transactions:
                     exists = BankTransaction.objects.filter(
@@ -404,12 +368,10 @@ def _run_pdf_job(job_id, pdf_bytes_list, filenames):
                         description=t['description'],
                         amount=t['amount'],
                     ).exists()
-
                     if exists:
                         skipped += 1
                         continue
 
-                    # Resolve category string → TransactionCategory FK
                     category_obj = None
                     category_name = t.get('category')
                     if category_name:
@@ -429,9 +391,9 @@ def _run_pdf_job(job_id, pdf_bytes_list, filenames):
                         amount=t['amount'],
                         transaction_type=t['type'],
                         reference_number=t['reference'],
-                        balance=t['balance'],
+                        balance=t.get('balance'),
                         category=category_obj,
-                        fee=t['fee'],
+                        fee=t.get('fee'),
                     )
                     saved += 1
 
@@ -500,7 +462,6 @@ def upload_pdf(request):
             daemon=True,
         )
         thread.start()
-
         return redirect('gmail:pdf_import_progress', pk=job.pk)
 
     recent_jobs = PDFImportJob.objects.filter(user=request.user)[:10]

@@ -14,17 +14,16 @@ ITEMS_PER_PAGE = 20
 @login_required
 def categories(request):
     cats = TransactionCategory.objects.order_by('name')
-    category_stats = {
-        c.id: {
+    categories_with_stats = [
+        (c, {
             'total': c.transactions.count(),
             'synced': c.transactions.filter(erpnext_synced=True).count(),
             'pending': c.transactions.filter(erpnext_synced=False).count(),
-        }
+        })
         for c in cats
-    }
+    ]
     return render(request, 'bridge/categories.html', {
-        'categories': cats,
-        'category_stats': category_stats,
+        'categories_with_stats': categories_with_stats,
     })
 
 
@@ -47,7 +46,6 @@ def new_category(request):
 @login_required
 def edit_category(request, pk):
     category = get_object_or_404(TransactionCategory, pk=pk)
-
     if request.method == 'POST':
         category.name = request.POST['name']
         category.erpnext_account = request.POST['erpnext_account']
@@ -58,14 +56,12 @@ def edit_category(request, pk):
         category.save()
         messages.success(request, 'Category updated.')
         return redirect(reverse('bridge:categories'))
-
     return render(request, 'bridge/category_form.html', {'category': category})
 
 
 @login_required
 def delete_category(request, pk):
     category = get_object_or_404(TransactionCategory, pk=pk)
-
     if request.method == 'POST':
         count = category.transactions.count()
         if count > 0:
@@ -73,7 +69,6 @@ def delete_category(request, pk):
             return redirect(reverse('bridge:categories'))
         category.delete()
         messages.success(request, 'Category deleted.')
-
     return redirect(reverse('bridge:categories'))
 
 
@@ -129,34 +124,28 @@ def preview_categorization(request):
 @login_required
 def categorize_transaction(request, pk):
     transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
-
     if request.method == 'POST':
         category_id = request.POST.get('category_id')
         if not category_id:
             messages.warning(request, 'Please select a category.')
             return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
-
         category = get_object_or_404(TransactionCategory, pk=category_id)
         transaction.category = category
         transaction.save()
         messages.success(request, f'Categorized as "{category.name}".')
-
     return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
 
 
 @login_required
 def uncategorize_transaction(request, pk):
     transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
-
     if request.method == 'POST':
         if transaction.erpnext_synced:
             messages.warning(request, 'Cannot uncategorize a synced transaction.')
             return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
-
         transaction.category = None
         transaction.save()
         messages.info(request, 'Transaction uncategorized.')
-
     return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
 
 
@@ -171,10 +160,8 @@ def bulk_operations(request):
             category__isnull=False, erpnext_synced=False
         ).count(),
     }
-
     erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
     recent_transactions = BankTransaction.objects.order_by('-date')[:10]
-
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
         'erpnext_config': erpnext_config,
@@ -189,7 +176,6 @@ def bulk_sync(request):
         if not config:
             messages.error(request, 'No active ERPNext configuration found.')
             return redirect(reverse('bridge:bulk_operations'))
-
         service = BulkSyncService(config)
         try:
             success, failed, total = service.sync_all_ready()
@@ -203,5 +189,4 @@ def bulk_sync(request):
                 messages.error(request, f'Failed to sync {failed} transactions.')
         except Exception as e:
             messages.error(request, f'Sync error: {e}')
-
     return redirect(reverse('bridge:bulk_operations'))
