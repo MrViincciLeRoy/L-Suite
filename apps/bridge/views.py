@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 from apps.main.models import TransactionCategory, BankTransaction, ERPNextConfig
-from .services import CategorizationService, BulkSyncService, classify_transaction
+from .services import CategorizationService, BulkSyncService, classify_transaction, JUNK_CATEGORY_NAMES
 
 ITEMS_PER_PAGE = 20
 
@@ -216,14 +216,20 @@ def uncategorize_transaction(request, pk):
 
 @login_required
 def bulk_operations(request):
+    from django.db.models import Q
+    junk_ids = list(TransactionCategory.objects.filter(name__in=JUNK_CATEGORY_NAMES).values_list('id', flat=True))
+    needs_categorization = BankTransaction.objects.filter(
+        Q(category__isnull=True) | Q(category_id__in=junk_ids),
+        erpnext_synced=False,
+    ).count()
     stats = {
         'total': BankTransaction.objects.count(),
-        'uncategorized': BankTransaction.objects.filter(category__isnull=True).count(),
-        'categorized': BankTransaction.objects.filter(category__isnull=False).count(),
+        'uncategorized': needs_categorization,
+        'categorized': BankTransaction.objects.filter(category__isnull=False).exclude(category_id__in=junk_ids).count(),
         'synced': BankTransaction.objects.filter(erpnext_synced=True).count(),
         'ready_to_sync': BankTransaction.objects.filter(
             category__isnull=False, erpnext_synced=False
-        ).count(),
+        ).exclude(category_id__in=junk_ids).count(),
     }
     erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
     recent_transactions = BankTransaction.objects.order_by('-date')[:10]

@@ -25,6 +25,14 @@ DEFAULT_CATEGORIES = [
     "Shopping", "Healthcare", "Telecommunications",
 ]
 
+# Category names treated as junk — transactions here get re-processed automatically
+JUNK_CATEGORY_NAMES = {
+    'uncategorised', 'uncategorized', 'other', 'other income',
+    'fee fees', 'terminal) fees', '***0) fees', 'sweep transfer',
+    'deposit investments', 'applied transfer', 'fnb cellphone',
+    'digital payments', '4th transfer', 'received interest',
+}
+
 # Fallback built-in clues — DB clues always take priority over these
 BUILTIN_CLUES = {
     "supermarket": "Groceries",
@@ -32,9 +40,14 @@ BUILTIN_CLUES = {
     "checkers": "Groceries",
     "woolworths": "Groceries",
     "tucksho": "Groceries",
+    "tuck sho": "Groceries",
+    "tuck shop": "Groceries",
     "spaza": "Groceries",
     "pick n pay": "Groceries",
     "spar": "Groceries",
+    "s2s*": "Groceries",
+    "ccn*": "Groceries",
+    "alcohol": "Groceries",
     "caltex": "Fuel",
     "shell": "Fuel",
     "sasol": "Fuel",
@@ -61,6 +74,11 @@ BUILTIN_CLUES = {
     "mtn": "Telecommunications",
     "telkom": "Telecommunications",
     "airtime": "Telecommunications",
+    "monthly account admin": "Banking & Finance",
+    "branch card replacement": "Banking & Finance",
+    "print statement fee": "Banking & Finance",
+    "external payment": "Banking & Finance",
+    "banking app": "Banking & Finance",
     "fnb": "Banking & Finance",
     "absa": "Banking & Finance",
     "nedbank": "Banking & Finance",
@@ -69,17 +87,27 @@ BUILTIN_CLUES = {
     "eskom": "Utilities",
     "city power": "Utilities",
     "municipality": "Utilities",
+    "immediate payment": "Transfer",
 }
 
 
+def _get_junk_category_ids():
+    try:
+        return list(
+            TransactionCategory.objects.filter(
+                name__in=JUNK_CATEGORY_NAMES
+            ).values_list('id', flat=True)
+        )
+    except Exception:
+        return []
+
+
 def _build_clue_map():
-    """
-    Build clue map: start with built-ins, then overlay DB keywords and tags.
-    DB entries always win on conflict so that user customizations take priority.
-    """
     clue_map = dict(BUILTIN_CLUES)
     try:
         for cat in TransactionCategory.objects.filter(active=True):
+            if cat.name.lower() in JUNK_CATEGORY_NAMES:
+                continue
             for kw in cat.get_keywords_list():
                 if kw:
                     clue_map[kw.lower().strip()] = cat.name
@@ -94,24 +122,17 @@ def _build_clue_map():
 
 def _get_candidate_labels():
     try:
-        names = list(TransactionCategory.objects.filter(active=True).values_list('name', flat=True))
+        names = list(
+            TransactionCategory.objects.filter(active=True)
+            .exclude(name__in=JUNK_CATEGORY_NAMES)
+            .values_list('name', flat=True)
+        )
         return names if names else DEFAULT_CATEGORIES
     except Exception:
         return DEFAULT_CATEGORIES
 
 
 def classify_transaction(transaction: str) -> dict:
-    """
-    Classify a single raw transaction string.
-
-    Pipeline:
-      1. Build clue map from DB keywords/tags + built-ins
-      2. Run HF zero-shot classification for base scores
-      3. Boost the matching category if a clue is detected
-      4. Return top label with confidence, method, and top-3
-
-    Falls back gracefully to clue-only if HF is unavailable.
-    """
     tx_lower = transaction.lower()
     clue_map = _build_clue_map()
     candidate_labels = _get_candidate_labels()
@@ -151,7 +172,6 @@ def classify_transaction(transaction: str) -> dict:
         except Exception as e:
             logger.warning(f"HF classification failed, falling back to clue-only: {e}")
 
-    # Clue-only fallback
     if clue_category:
         return {
             "raw": transaction,
@@ -178,42 +198,62 @@ def classify_transaction(transaction: str) -> dict:
 
 class CategorizationService:
 
+    def _get_processable_transactions(self):
+        """
+        Returns transactions that need categorizing:
+        - category is null, OR
+        - category is a junk/placeholder category
+        Only unsynced transactions are touched.
+        """
+        junk_ids = _get_junk_category_ids()
+        from django.db.models import Q
+        return BankTransaction.objects.filter(
+            Q(category__isnull=True) | Q(category_id__in=junk_ids),
+            erpnext_synced=False,
+        )
+
     def auto_categorize_all(self):
-        uncategorized = list(BankTransaction.objects.filter(category__isnull=True, erpnext_synced=False))
-        if not uncategorized:
+        transactions = list(self._get_processable_transactions())
+        if not transactions:
             return 0, 0
 
-        categories = list(TransactionCategory.objects.filter(active=True))
+        good_categories = list(
+            TransactionCategory.objects.filter(active=True)
+            .exclude(name__in=JUNK_CATEGORY_NAMES)
+        )
         categorized_count = 0
 
-        for transaction in uncategorized:
-            category = self._find_matching_category(transaction, categories)
+        for transaction in transactions:
+            category = self._find_matching_category(transaction, good_categories)
             if category:
                 transaction.category = category
                 transaction.save()
                 categorized_count += 1
                 logger.info(f"Auto-categorized transaction {transaction.id} as {category.name}")
 
-        return categorized_count, len(uncategorized)
+        return categorized_count, len(transactions)
 
     def auto_categorize_with_ai(self):
         """
-        Two-pass categorization:
-          Pass 1 — fast keyword match from DB (no API call)
-          Pass 2 — HF zero-shot + clue boost for anything still uncategorized
+        Two-pass categorization covering null AND junk-categorized transactions:
+          Pass 1 — keyword match from DB
+          Pass 2 — HF zero-shot + clue boost for leftovers
         Returns (keyword_count, ai_count, total)
         """
-        uncategorized = list(BankTransaction.objects.filter(category__isnull=True, erpnext_synced=False))
-        if not uncategorized:
+        transactions = list(self._get_processable_transactions())
+        if not transactions:
             return 0, 0, 0
 
-        categories = list(TransactionCategory.objects.filter(active=True))
-        category_name_map = {c.name.lower(): c for c in categories}
+        good_categories = list(
+            TransactionCategory.objects.filter(active=True)
+            .exclude(name__in=JUNK_CATEGORY_NAMES)
+        )
+        category_name_map = {c.name.lower(): c for c in good_categories}
         keyword_count = 0
         ai_count = 0
 
-        for transaction in uncategorized:
-            category = self._find_matching_category(transaction, categories)
+        for transaction in transactions:
+            category = self._find_matching_category(transaction, good_categories)
             if category:
                 transaction.category = category
                 transaction.save()
@@ -233,7 +273,7 @@ class CategorizationService:
                     f"[{result.get('method')}, {result.get('confidence')}]"
                 )
 
-        return keyword_count, ai_count, len(uncategorized)
+        return keyword_count, ai_count, len(transactions)
 
     def _find_matching_category(self, transaction, categories):
         if not transaction.description:
@@ -245,12 +285,15 @@ class CategorizationService:
         return None
 
     def preview_categorization(self):
-        uncategorized = list(BankTransaction.objects.filter(category__isnull=True, erpnext_synced=False))
-        categories = list(TransactionCategory.objects.filter(active=True))
+        transactions = list(self._get_processable_transactions())
+        good_categories = list(
+            TransactionCategory.objects.filter(active=True)
+            .exclude(name__in=JUNK_CATEGORY_NAMES)
+        )
 
         matches, no_match = [], []
-        for transaction in uncategorized:
-            category = self._find_matching_category(transaction, categories)
+        for transaction in transactions:
+            category = self._find_matching_category(transaction, good_categories)
             if category:
                 matched_keyword = next(
                     (kw for kw in category.get_keywords_list() if kw in transaction.description.lower()),
@@ -260,21 +303,23 @@ class CategorizationService:
             else:
                 no_match.append(transaction)
 
-        return {'uncategorized': uncategorized, 'matches': matches, 'no_match': no_match}
+        return {'uncategorized': transactions, 'matches': matches, 'no_match': no_match}
 
     def suggest_category(self, description):
-        """Keyword match first, then AI. Returns a Category instance or a classify_transaction dict."""
         if not description:
             return None
 
-        categories = list(TransactionCategory.objects.filter(active=True))
+        good_categories = list(
+            TransactionCategory.objects.filter(active=True)
+            .exclude(name__in=JUNK_CATEGORY_NAMES)
+        )
 
         class _FakeTxn:
             pass
 
         t = _FakeTxn()
         t.description = description
-        db_match = self._find_matching_category(t, categories)
+        db_match = self._find_matching_category(t, good_categories)
         if db_match:
             return db_match
 
@@ -285,7 +330,7 @@ class CategorizationService:
 
 
 # ---------------------------------------------------------------------------
-# Bulk Sync Service (unchanged)
+# Bulk Sync Service
 # ---------------------------------------------------------------------------
 
 class BulkSyncService:
@@ -294,7 +339,10 @@ class BulkSyncService:
         self.service = ERPNextService(erpnext_config)
 
     def sync_all_ready(self):
-        ready = list(BankTransaction.objects.filter(category__isnull=False, erpnext_synced=False))
+        ready = list(BankTransaction.objects.filter(
+            category__isnull=False,
+            erpnext_synced=False,
+        ).exclude(category__name__in=JUNK_CATEGORY_NAMES))
         if not ready:
             return 0, 0, 0
 
@@ -327,7 +375,7 @@ class BulkSyncService:
             erpnext_synced=False,
             date__gte=start_date,
             date__lte=end_date,
-        ))
+        ).exclude(category__name__in=JUNK_CATEGORY_NAMES))
         success_count, failed_count = 0, 0
         for transaction in transactions:
             try:
