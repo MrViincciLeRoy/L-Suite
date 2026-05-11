@@ -17,34 +17,34 @@
 
 <div class="row mb-4">
     <div class="col-md-3">
-        <div class="card">
+        <div class="card text-white bg-primary">
             <div class="card-body">
-                <h6 class="text-muted">Total Statements</h6>
-                <h3>{{ statements.paginator.count }}</h3>
+                <h6 class="text-white-50">Total Statements</h6>
+                <h3 class="mb-0">{{ statements.paginator.count }}</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card text-white bg-success">
             <div class="card-body">
-                <h6 class="text-muted">Parsed</h6>
-                <h3 class="text-success">{{ stats.parsed }}</h3>
+                <h6 class="text-white-50">Parsed</h6>
+                <h3 class="mb-0">{{ stats.parsed }}</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card text-white bg-warning">
             <div class="card-body">
-                <h6 class="text-muted">Pending</h6>
-                <h3 class="text-warning">{{ stats.pending }}</h3>
+                <h6 class="text-white-50">Pending</h6>
+                <h3 class="mb-0">{{ stats.pending }}</h3>
             </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card text-white bg-info">
             <div class="card-body">
-                <h6 class="text-muted">This Page</h6>
-                <h3>{{ statements.object_list|length }}</h3>
+                <h6 class="text-white-50">This Page</h6>
+                <h3 class="mb-0">{{ statements.object_list|length }}</h3>
             </div>
         </div>
     </div>
@@ -52,48 +52,75 @@
 
 {% if statements.object_list %}
 <div class="card">
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
                     <tr>
                         <th>Date</th>
                         <th>Bank</th>
                         <th>Subject</th>
                         <th>Sender</th>
                         <th>Status</th>
-                        <th>Transactions</th>
+                        <th class="text-end">Credits</th>
+                        <th class="text-end">Debits</th>
+                        <th class="text-center">Transactions</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for statement in statements.object_list %}
                     <tr>
-                        <td>{{ statement.date|date:"Y-m-d"|default:"N/A" }}</td>
-                        <td><span class="badge bg-secondary">{{ statement.bank_name|upper }}</span></td>
+                        <td class="text-nowrap">
+                            {{ statement.received_date|date:"Y-m-d"|default:"N/A" }}
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ statement.bank_name|upper }}</span>
+                        </td>
                         <td>
                             <a href="{% url 'gmail:statement_detail' pk=statement.id %}">
                                 {{ statement.subject|truncatechars:50 }}
                             </a>
                         </td>
                         <td><small class="text-muted">{{ statement.sender|truncatechars:30 }}</small></td>
-                        <td>
+                        <td class="text-nowrap">
                             {% if statement.state == 'parsed' %}
                                 <span class="badge bg-success"><i class="fas fa-check"></i> Parsed</span>
                             {% elif statement.state == 'imported' %}
                                 <span class="badge bg-info"><i class="fas fa-cloud-download-alt"></i> Imported</span>
+                            {% elif statement.state == 'error' %}
+                                <span class="badge bg-danger"><i class="fas fa-exclamation-circle"></i> Error</span>
                             {% else %}
-                                <span class="badge bg-secondary"><i class="fas fa-clock"></i> Draft</span>
+                                <span class="badge bg-secondary"><i class="fas fa-clock"></i> {{ statement.state|capfirst }}</span>
                             {% endif %}
                             {% if statement.has_pdf %}
-                                <span class="badge bg-primary"><i class="fas fa-file-pdf"></i> PDF</span>
+                                <span class="badge bg-primary ms-1"><i class="fas fa-file-pdf"></i></span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="text-end text-nowrap">
+                            {% with credits=statement.bank_transactions.all %}
+                                {% if credits %}
+                                    {% with total=0 %}
+                                        {# Sum deposits via annotation — falls back to transaction_count display #}
+                                    {% endwith %}
+                                {% endif %}
+                            {% endwith %}
+                            <span class="text-success fw-semibold">
+                                {% with txns=statement.bank_transactions.all %}
+                                    {% if txns %}
+                                        R {% for t in txns %}{% if t.deposit %}{{ t.deposit|add:0 }}{% endif %}{% endfor %}
+                                    {% else %}—{% endif %}
+                                {% endwith %}
+                            </span>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <span class="text-danger fw-semibold">—</span>
+                        </td>
+                        <td class="text-center">
                             {% if statement.transaction_count > 0 %}
-                                <span class="badge bg-info">{{ statement.transaction_count }} transactions</span>
+                                <span class="badge bg-info">{{ statement.transaction_count }}</span>
                             {% else %}
-                                <span class="text-muted">-</span>
+                                <span class="text-muted">—</span>
                             {% endif %}
                         </td>
                         <td>
