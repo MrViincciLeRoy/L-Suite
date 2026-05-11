@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}Bulk Operations - LSuite{% endblock %}
 
 {% block content %}
@@ -45,22 +44,18 @@
 <div class="row mb-4">
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-magic"></i> Auto-Categorization</h5>
-            </div>
+            <div class="card-header"><h5><i class="fas fa-magic"></i> Auto-Categorization</h5></div>
             <div class="card-body">
                 <p>Automatically categorize transactions based on keywords defined in categories.</p>
                 <dl class="row">
                     <dt class="col-sm-6">Uncategorized:</dt>
                     <dd class="col-sm-6"><strong>{{ stats.uncategorized }}</strong> transactions</dd>
-                    <dt class="col-sm-6">Categories:</dt>
-                    <dd class="col-sm-6"><strong>{{ stats.categories|default:"N/A" }}</strong> active</dd>
                 </dl>
                 {% if stats.uncategorized > 0 %}
                 <form method="POST" action="{% url 'bridge:auto_categorize' %}">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-primary w-100"
-                            onclick="return confirm('This will auto-categorize {{ stats.uncategorized }} uncategorized transactions. Continue?')">
+                            onclick="return confirm('Auto-categorize {{ stats.uncategorized }} transactions?')">
                         <i class="fas fa-magic"></i> Auto-Categorize All ({{ stats.uncategorized }})
                     </button>
                 </form>
@@ -75,9 +70,7 @@
 
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-cloud-upload-alt"></i> ERPNext Sync</h5>
-            </div>
+            <div class="card-header"><h5><i class="fas fa-cloud-upload-alt"></i> ERPNext Sync</h5></div>
             <div class="card-body">
                 <p>Sync categorized transactions to ERPNext as journal entries.</p>
                 <dl class="row">
@@ -97,13 +90,13 @@
                     <form method="POST" action="{% url 'bridge:bulk_sync' %}">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-success w-100"
-                                onclick="return confirm('This will sync {{ stats.ready_to_sync }} transactions to ERPNext. Continue?')">
+                                onclick="return confirm('Sync {{ stats.ready_to_sync }} transactions to ERPNext?')">
                             <i class="fas fa-cloud-upload-alt"></i> Sync to ERPNext ({{ stats.ready_to_sync }})
                         </button>
                     </form>
                     {% else %}
                     <div class="alert alert-info mb-0">
-                        <i class="fas fa-info-circle"></i> No transactions ready to sync. Categorize transactions first.
+                        <i class="fas fa-info-circle"></i> No transactions ready to sync.
                     </div>
                     {% endif %}
                 {% else %}
@@ -117,66 +110,42 @@
     </div>
 </div>
 
-{% if erpnext_config %}
-<div class="card mb-4">
-    <div class="card-header">
-        <h5><i class="fas fa-server"></i> ERPNext Configuration</h5>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-6">
-                <dl class="row">
-                    <dt class="col-sm-5">Configuration:</dt>
-                    <dd class="col-sm-7">{{ erpnext_config.name }}</dd>
-                    <dt class="col-sm-5">Company:</dt>
-                    <dd class="col-sm-7">{{ erpnext_config.default_company }}</dd>
-                    <dt class="col-sm-5">Bank Account:</dt>
-                    <dd class="col-sm-7"><small>{{ erpnext_config.bank_account }}</small></dd>
-                </dl>
-            </div>
-            <div class="col-md-6">
-                <dl class="row">
-                    <dt class="col-sm-5">Base URL:</dt>
-                    <dd class="col-sm-7"><small class="text-muted">{{ erpnext_config.base_url }}</small></dd>
-                    <dt class="col-sm-5">Last Sync:</dt>
-                    <dd class="col-sm-7">
-                        {% if erpnext_config.last_sync %}
-                            {{ erpnext_config.last_sync|date:"Y-m-d H:i" }}
-                        {% else %}
-                            <span class="text-muted">Never</span>
-                        {% endif %}
-                    </dd>
-                </dl>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
 {% if recent_transactions %}
 <div class="card">
-    <div class="card-header">
-        <h5><i class="fas fa-clock"></i> Recent Transactions</h5>
-    </div>
-    <div class="card-body">
+    <div class="card-header"><h5><i class="fas fa-clock"></i> Recent Transactions</h5></div>
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-sm table-hover">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th>Date</th>
                         <th>Description</th>
-                        <th>Amount</th>
+                        <th>Type</th>
+                        <th class="text-end">Amount</th>
                         <th>Category</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for trans in recent_transactions %}
-                    <tr>
+                    <tr style="cursor:pointer;" onclick="window.location='{% url 'gmail:transaction_detail' trans.pk %}'">
                         <td>{{ trans.date }}</td>
                         <td>{{ trans.description|truncatechars:40 }}</td>
-                        <td class="text-{{ trans.transaction_type|yesno:'danger,success,info' }}">
-                            R{{ trans.amount|floatformat:2 }}
+                        <td>
+                            {% if trans.transaction_type == 'debit' %}
+                                <span class="badge bg-danger">Debit</span>
+                            {% elif trans.transaction_type == 'credit' %}
+                                <span class="badge bg-success">Credit</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ trans.transaction_type }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if trans.transaction_type == 'debit' %}
+                                <span class="text-danger">R{{ trans.amount|floatformat:2 }}</span>
+                            {% else %}
+                                <span class="text-success">R{{ trans.amount|floatformat:2 }}</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if trans.category %}

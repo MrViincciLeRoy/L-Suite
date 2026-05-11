@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block title %}Dashboard - LSuite{% endblock %}
 
 {% block content %}
@@ -95,22 +94,26 @@
                 <div class="card-body p-0">
                     {% if recent_transactions %}
                     <div class="table-responsive">
-                        <table class="table table-sm mb-0">
+                        <table class="table table-hover table-sm mb-0">
                             <tbody>
                                 {% for trans in recent_transactions %}
-                                <tr style="cursor: pointer;"
+                                <tr style="cursor:pointer;"
                                     onclick="window.location='{% url 'gmail:transaction_detail' pk=trans.id %}'">
                                     <td>{{ trans.date|date:"Y-m-d" }}</td>
                                     <td>
-                                        <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        <div style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                                             {{ trans.description }}
                                         </div>
                                     </td>
                                     <td class="text-end">
-                                        {% if trans.withdrawal %}
-                                            <span class="text-danger">-R{{ trans.withdrawal|floatformat:2 }}</span>
+                                        {% if trans.transaction_type == 'debit' %}
+                                            <span class="text-danger fw-semibold">-R{{ trans.amount|floatformat:2 }}</span>
+                                        {% elif trans.transaction_type == 'credit' %}
+                                            <span class="text-success fw-semibold">+R{{ trans.amount|floatformat:2 }}</span>
+                                        {% elif trans.withdrawal %}
+                                            <span class="text-danger fw-semibold">-R{{ trans.withdrawal|floatformat:2 }}</span>
                                         {% elif trans.deposit %}
-                                            <span class="text-success">+R{{ trans.deposit|floatformat:2 }}</span>
+                                            <span class="text-success fw-semibold">+R{{ trans.deposit|floatformat:2 }}</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -130,11 +133,9 @@
     </div>
 
     <div class="row">
-        <div class="col-md-12">
+        <div class="col-12">
             <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Quick Actions</h5>
-                </div>
+                <div class="card-header"><h5 class="mb-0">Quick Actions</h5></div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-3 mb-2">

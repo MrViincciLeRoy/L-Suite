@@ -23,7 +23,7 @@
                 <label class="form-label">Sync Status</label>
                 <select name="not_synced" class="form-select" onchange="this.form.submit()">
                     <option value="">All</option>
-                    <option value="1" {% if request.GET.not_synced %}selected{% endif %}>Not Synced to ERPNext</option>
+                    <option value="1" {% if request.GET.not_synced %}selected{% endif %}>Not Synced</option>
                 </select>
             </div>
             <div class="col-md-3">
@@ -47,7 +47,7 @@
     </div>
 </div>
 
-<div class="row mb-4">
+<div class="row mb-3">
     <div class="col-md-3">
         <div class="card">
             <div class="card-body">
@@ -56,21 +56,13 @@
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <h6 class="text-muted">This Page</h6>
-                <h3>{{ transactions|length }}</h3>
-            </div>
-        </div>
-    </div>
 </div>
 
 {% if transactions %}
 <div class="card">
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover">
+            <table class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th>Date</th>
@@ -79,41 +71,41 @@
                         <th class="text-end">Amount</th>
                         <th>Category</th>
                         <th>ERPNext</th>
-                        <th>Actions</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for trans in transactions %}
-                    <tr>
+                    <tr style="cursor:pointer;" onclick="window.location='{% url 'gmail:transaction_detail' trans.pk %}'">
                         <td>{{ trans.date|date:"Y-m-d" }}</td>
-                        <td>{{ trans.description|truncatechars:60 }}</td>
+                        <td>{{ trans.description|truncatechars:55 }}</td>
                         <td>
                             {% if trans.transaction_type == 'debit' %}
                                 <span class="badge bg-danger"><i class="fas fa-arrow-down"></i> Debit</span>
-                            {% else %}
+                            {% elif trans.transaction_type == 'credit' %}
                                 <span class="badge bg-success"><i class="fas fa-arrow-up"></i> Credit</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ trans.transaction_type }}</span>
                             {% endif %}
                         </td>
                         <td class="text-end">
-                            <strong class="text-{% if trans.transaction_type == 'debit' %}danger{% else %}success{% endif %}">
-                                R{{ trans.amount|floatformat:2 }}
-                            </strong>
+                            {% if trans.transaction_type == 'debit' %}
+                                <strong class="text-danger">R{{ trans.amount|floatformat:2 }}</strong>
+                            {% else %}
+                                <strong class="text-success">R{{ trans.amount|floatformat:2 }}</strong>
+                            {% endif %}
                         </td>
-                        <td>
+                        <td onclick="event.stopPropagation();">
                             {% if trans.category %}
                                 <span class="badge bg-info">{{ trans.category.name }}</span>
                             {% else %}
-                                <form method="POST"
-                                      action="{% url 'bridge:categorize_transaction' trans.pk %}"
-                                      class="d-inline">
+                                <form method="POST" action="{% url 'bridge:categorize_transaction' trans.pk %}">
                                     {% csrf_token %}
-                                    <select name="category_id"
-                                            class="form-select form-select-sm"
-                                            style="width:150px;display:inline-block;"
-                                            onchange="this.form.submit()">
+                                    <select name="category_id" class="form-select form-select-sm"
+                                            style="width:150px;" onchange="this.form.submit()">
                                         <option value="">Select...</option>
-                                        {% for category in categories %}
-                                        <option value="{{ category.pk }}">{{ category.name }}</option>
+                                        {% for cat in categories %}
+                                        <option value="{{ cat.pk }}">{{ cat.name }}</option>
                                         {% endfor %}
                                     </select>
                                 </form>
@@ -126,11 +118,9 @@
                                 <span class="text-muted"><i class="fas fa-clock"></i> Pending</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td onclick="event.stopPropagation();">
                             {% if trans.category and not trans.erpnext_synced %}
-                            <form method="POST"
-                                  action="{% url 'bridge:uncategorize_transaction' trans.pk %}"
-                                  style="display:inline;">
+                            <form method="POST" action="{% url 'bridge:uncategorize_transaction' trans.pk %}">
                                 {% csrf_token %}
                                 <button type="submit" class="btn btn-outline-secondary btn-sm" title="Remove category">
                                     <i class="fas fa-times"></i>
@@ -150,8 +140,7 @@
 
 {% else %}
 <div class="alert alert-info">
-    <i class="fas fa-info-circle"></i>
-    No transactions found. Import statements from Gmail or upload a CSV.
+    <i class="fas fa-info-circle"></i> No transactions found.
 </div>
 {% endif %}
 {% endblock %}

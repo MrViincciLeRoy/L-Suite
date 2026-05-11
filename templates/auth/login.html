@@ -1,8 +1,4 @@
-<!-- ============================================================
-     lsuite/templates/auth/login.html
-     ============================================================ -->
 {% extends "base.html" %}
-
 {% block title %}Login - LSuite{% endblock %}
 
 {% block content %}
@@ -14,42 +10,21 @@
                     <i class="fas fa-file-invoice-dollar text-primary"></i>
                     <br>LSuite Login
                 </h3>
-                
-                <form method="POST" action="{% url 'authusers:login' %}" class="text-center">
+                <form method="POST" action="{% url 'authusers:login' %}">
                     {% csrf_token %}
-                    
                     <div class="mb-3">
-                        {{ form.username.label }}
-                        {{ form.username }}
-                        {% if form.username.errors %}
-                            <div class="invalid-feedback">
-                                {{ form.username.errors }}
-                            </div>
-                        {% endif %}
+                        <label class="form-label">Username</label>
+                        <input type="text" name="username" class="form-control" required autofocus>
                     </div>
-                    
                     <div class="mb-3">
-                        {{ form.password.label }}
-                        {{ form.password }}
-                        {% if form.password.errors %}
-                            <div class="invalid-feedback">
-                                {{ form.password.errors }}
-                            </div>
-                        {% endif %}
+                        <label class="form-label">Password</label>
+                        <input type="password" name="password" class="form-control" required>
                     </div>
-                    
-                    <div class="mb-3 form-check">
-                        {{ form.remember_me }}
-                        {{ form.remember_me.label }}
-                    </div>
-                    
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary btn-lg">Login</button>
                     </div>
                 </form>
-                
                 <hr class="my-4">
-                
                 <p class="text-center text-muted">
                     Don't have an account?
                     <a href="{% url 'authusers:register' %}">Register here</a>
