@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.urls import reverse
 from django.http import JsonResponse
-from django.core.paginator import Paginator
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 from apps.main.models import TransactionCategory, BankTransaction, ERPNextConfig
 from .services import CategorizationService, BulkSyncService
@@ -77,7 +77,11 @@ def category_transactions(request, pk):
     category = get_object_or_404(TransactionCategory, pk=pk)
     txns_qs = category.transactions.order_by('-date')
     paginator = Paginator(txns_qs, ITEMS_PER_PAGE)
-    page = paginator.get_page(request.GET.get('page', 1))
+    page_number = request.GET.get('page', 1)
+    try:
+        page = paginator.page(page_number)
+    except (EmptyPage, PageNotAnInteger):
+        page = paginator.page(1)
     return render(request, 'bridge/category_transactions.html', {
         'category': category,
         'transactions': page,
