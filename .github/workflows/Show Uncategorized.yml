@@ -1,0 +1,34 @@
+name: Show Uncategorized
+
+on:
+  workflow_dispatch:
+
+jobs:
+  show:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Show uncategorized descriptions
+        run: |
+          python manage.py shell << 'EOF'
+          from apps.main.models import BankTransaction
+
+          txns = BankTransaction.objects.filter(category__isnull=True).order_by('description')
+          print(f"Total uncategorized: {txns.count()}\n")
+          for t in txns:
+              print(f"  [{t.id}] {t.description}")
+          EOF
