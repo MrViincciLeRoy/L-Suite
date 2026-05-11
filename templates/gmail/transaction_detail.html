@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Transaction #{{ transaction.id }} - LSuite{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="fas fa-receipt"></i> Transaction Detail</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'main:index' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'gmail:transactions' %}">Transactions</a></li>
+                    <li class="breadcrumb-item active">#{{ transaction.id }}</li>
+                </ol>
+            </nav>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'gmail:transactions' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Main details -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header"><h5 class="mb-0">Transaction Information</h5></div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Date</dt>
+                        <dd class="col-sm-8">{{ transaction.date|date:"Y-m-d" }}</dd>
+
+                        {% if transaction.posting_date %}
+                        <dt class="col-sm-4">Posting Date</dt>
+                        <dd class="col-sm-8">{{ transaction.posting_date|date:"Y-m-d" }}</dd>
+                        {% endif %}
+
+                        <dt class="col-sm-4">Description</dt>
+                        <dd class="col-sm-8">{{ transaction.description }}</dd>
+
+                        <dt class="col-sm-4">Type</dt>
+                        <dd class="col-sm-8">
+                            {% if transaction.transaction_type == 'debit' %}
+                                <span class="badge bg-danger"><i class="fas fa-arrow-down"></i> Debit</span>
+                            {% else %}
+                                <span class="badge bg-success"><i class="fas fa-arrow-up"></i> Credit</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-4">Amount</dt>
+                        <dd class="col-sm-8">
+                            <strong class="text-{% if transaction.transaction_type == 'debit' %}danger{% else %}success{% endif %} fs-5">
+                                R{{ transaction.amount|floatformat:2 }}
+                            </strong>
+                        </dd>
+
+                        {% if transaction.withdrawal %}
+                        <dt class="col-sm-4">Withdrawal</dt>
+                        <dd class="col-sm-8 text-danger">R{{ transaction.withdrawal|floatformat:2 }}</dd>
+                        {% endif %}
+
+                        {% if transaction.deposit %}
+                        <dt class="col-sm-4">Deposit</dt>
+                        <dd class="col-sm-8 text-success">R{{ transaction.deposit|floatformat:2 }}</dd>
+                        {% endif %}
+
+                        {% if transaction.fee %}
+                        <dt class="col-sm-4">Fee</dt>
+                        <dd class="col-sm-8 text-warning">R{{ transaction.fee|floatformat:2 }}</dd>
+                        {% endif %}
+
+                        {% if transaction.balance %}
+                        <dt class="col-sm-4">Balance</dt>
+                        <dd class="col-sm-8">R{{ transaction.balance|floatformat:2 }}</dd>
+                        {% endif %}
+
+                        {% if transaction.reference_number %}
+                        <dt class="col-sm-4">Reference</dt>
+                        <dd class="col-sm-8"><code>{{ transaction.reference_number }}</code></dd>
+                        {% endif %}
+
+                        {% if transaction.statement %}
+                        <dt class="col-sm-4">Statement</dt>
+                        <dd class="col-sm-8">
+                            <a href="{% url 'gmail:statement_detail' pk=transaction.statement.id %}">
+                                {{ transaction.statement.subject|truncatechars:50 }}
+                            </a>
+                        </dd>
+                        {% endif %}
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category & sync -->
+        <div class="col-md-6 mb-4">
+            <div class="card mb-3">
+                <div class="card-header"><h5 class="mb-0">Category</h5></div>
+                <div class="card-body">
+                    {% if transaction.category %}
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <span class="badge bg-info fs-6">{{ transaction.category.name }}</span>
+                            {% if not transaction.erpnext_synced %}
+                            <form method="POST" action="{% url 'bridge:uncategorize_transaction' transaction.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fas fa-times"></i> Remove
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                        {% if transaction.category.erpnext_account %}
+                        <small class="text-muted">ERPNext account: {{ transaction.category.erpnext_account }}</small>
+                        {% endif %}
+                    {% else %}
+                        <form method="POST" action="{% url 'bridge:categorize_transaction' transaction.pk %}">
+                            {% csrf_token %}
+                            <div class="input-group">
+                                <select name="category_id" class="form-select" required>
+                                    <option value="">Select a category...</option>
+                                    {% for cat in categories %}
+                                    <option value="{{ cat.pk }}">{{ cat.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-tag"></i> Assign
+                                </button>
+                            </div>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">ERPNext Sync</h5></div>
+                <div class="card-body">
+                    {% if transaction.erpnext_synced %}
+                        <div class="alert alert-success mb-0">
+                            <i class="fas fa-check-circle"></i> Synced
+                            {% if transaction.erpnext_journal_entry %}
+                                — Journal Entry: <strong>{{ transaction.erpnext_journal_entry }}</strong>
+                            {% endif %}
+                            {% if transaction.erpnext_sync_date %}
+                                <br><small class="text-muted">{{ transaction.erpnext_sync_date|date:"Y-m-d H:i" }}</small>
+                            {% endif %}
+                        </div>
+                    {% elif transaction.category %}
+                        <button class="btn btn-success w-100"
+                                onclick="syncTransaction({{ transaction.pk }}, this)">
+                            <i class="fas fa-sync"></i> Sync to ERPNext
+                        </button>
+                        {% if transaction.erpnext_error %}
+                        <div class="alert alert-danger mt-2 mb-0">
+                            <small>Last error: {{ transaction.erpnext_error }}</small>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <p class="text-muted mb-0">
+                            <i class="fas fa-info-circle"></i> Assign a category before syncing.
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if transaction.notes %}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header"><h5 class="mb-0">Notes</h5></div>
+                <div class="card-body">{{ transaction.notes }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function syncTransaction(pk, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+    fetch(`/erpnext/transactions/${pk}/sync/`, {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'},
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.closest('.card-body').innerHTML =
+                `<div class="alert alert-success mb-0"><i class="fas fa-check-circle"></i> Synced — ${data.journal_entry}</div>`;
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync"></i> Sync to ERPNext';
+            alert('Sync failed: ' + data.message);
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync"></i> Sync to ERPNext';
+        alert('Request failed.');
+    });
+}
+</script>
+{% endblock %}
