@@ -97,25 +97,29 @@
                                 <span class="badge bg-primary ms-1"><i class="fas fa-file-pdf"></i></span>
                             {% endif %}
                         </td>
+
+                        {# Credits: annotated from view (covers both deposit field and credit amount+type) #}
                         <td class="text-end text-nowrap">
-                            {% with credits=statement.bank_transactions.all %}
-                                {% if credits %}
-                                    {% with total=0 %}
-                                        {# Sum deposits via annotation — falls back to transaction_count display #}
-                                    {% endwith %}
-                                {% endif %}
-                            {% endwith %}
                             <span class="text-success fw-semibold">
-                                {% with txns=statement.bank_transactions.all %}
-                                    {% if txns %}
-                                        R {% for t in txns %}{% if t.deposit %}{{ t.deposit|add:0 }}{% endif %}{% endfor %}
-                                    {% else %}—{% endif %}
-                                {% endwith %}
+                                {% if statement.total_credits %}
+                                    R {{ statement.total_credits|floatformat:2 }}
+                                {% else %}
+                                    —
+                                {% endif %}
                             </span>
                         </td>
+
+                        {# Debits: annotated from view (covers both withdrawal field and debit amount+type) #}
                         <td class="text-end text-nowrap">
-                            <span class="text-danger fw-semibold">—</span>
+                            <span class="text-danger fw-semibold">
+                                {% if statement.total_debits %}
+                                    R {{ statement.total_debits|floatformat:2 }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </span>
                         </td>
+
                         <td class="text-center">
                             {% if statement.transaction_count > 0 %}
                                 <span class="badge bg-info">{{ statement.transaction_count }}</span>
