@@ -1,0 +1,53 @@
+name: Diagnose Categories
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run diagnostics
+        run: |
+          python manage.py shell << 'EOF'
+          from apps.main.models import BankTransaction, TransactionCategory
+
+          print("\n=== CATEGORIES ===")
+          cats = TransactionCategory.objects.all()
+          print(f"Total categories: {cats.count()}")
+          for c in cats:
+              print(f"  [{c.id}] {c.name} | active={c.active} | keywords='{c.keywords}' | tags='{c.tags}'")
+
+          print("\n=== TRANSACTIONS ===")
+          total = BankTransaction.objects.count()
+          uncategorized = BankTransaction.objects.filter(category__isnull=True).count()
+          categorized = BankTransaction.objects.filter(category__isnull=False).count()
+          synced = BankTransaction.objects.filter(erpnext_synced=True).count()
+          unsynced = BankTransaction.objects.filter(erpnext_synced=False).count()
+          print(f"  Total:         {total}")
+          print(f"  Uncategorized: {uncategorized}")
+          print(f"  Categorized:   {categorized}")
+          print(f"  Synced:        {synced}")
+          print(f"  Not synced:    {unsynced}")
+
+          print("\n=== SAMPLE UNCATEGORIZED (first 10) ===")
+          for t in BankTransaction.objects.filter(category__isnull=True)[:10]:
+              print(f"  [{t.id}] {t.description[:60]} | erpnext_synced={t.erpnext_synced}")
+
+          print("\n=== DONE ===")
+          EOF
