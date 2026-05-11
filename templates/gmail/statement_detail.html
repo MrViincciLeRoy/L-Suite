@@ -109,8 +109,8 @@
                                 <tr>
                                     <th>Date</th>
                                     <th>Description</th>
-                                    <th class="text-end">Withdrawal</th>
-                                    <th class="text-end">Deposit</th>
+                                    <th class="text-end">Debit</th>
+                                    <th class="text-end">Credit</th>
                                     <th>Category</th>
                                     <th>Status</th>
                                 </tr>
@@ -125,16 +125,29 @@
                                             {{ transaction.description }}
                                         </div>
                                     </td>
+
+                                    {# Debit column: prefer withdrawal field, fall back to amount+type #}
                                     <td class="text-end text-danger">
                                         {% if transaction.withdrawal %}
                                             R {{ transaction.withdrawal|floatformat:2 }}
-                                        {% else %}-{% endif %}
+                                        {% elif transaction.transaction_type == 'debit' and transaction.amount %}
+                                            R {{ transaction.amount|floatformat:2 }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
                                     </td>
+
+                                    {# Credit column: prefer deposit field, fall back to amount+type #}
                                     <td class="text-end text-success">
                                         {% if transaction.deposit %}
                                             R {{ transaction.deposit|floatformat:2 }}
-                                        {% else %}-{% endif %}
+                                        {% elif transaction.transaction_type == 'credit' and transaction.amount %}
+                                            R {{ transaction.amount|floatformat:2 }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
                                     </td>
+
                                     <td>
                                         {% if transaction.category %}
                                             <span class="badge bg-info">{{ transaction.category.name }}</span>
