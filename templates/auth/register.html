@@ -7,31 +7,23 @@
   .prog-bar   { height: 4px; background: #e9ecef; border-radius: 2px; margin-bottom: 1.5rem; }
   .prog-fill  { height: 100%; background: linear-gradient(90deg,#0d6efd,#6610f2); border-radius: 2px; transition: width .35s ease; }
   .prog-label { display: flex; justify-content: space-between; font-size: .72rem; color: #6c757d; margin-bottom: .4rem; }
-
   .reg-card          { display: none; }
   .reg-card.active   { display: block; }
-
   .card-step  { font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; margin-bottom: .25rem; }
   .card-title { font-size: 1.15rem; font-weight: 600; margin-bottom: .2rem; }
   .card-sub   { font-size: .82rem; color: #6c757d; margin-bottom: 1.4rem; }
-
   .field-label { font-size: .78rem; font-weight: 500; margin-bottom: .3rem; }
   .opt-badge   { font-size: .62rem; font-weight: 400; color: #adb5bd; margin-left: .35rem; }
-
   .btn-row    { display: flex; gap: .65rem; margin-top: 1.4rem; align-items: center; flex-wrap: wrap; }
   .btn-skip   { margin-left: auto; font-size: .75rem; color: #6c757d; background: none; border: none; cursor: pointer; }
   .btn-skip:hover { color: #343a40; }
-
   .err-text   { font-size: .75rem; color: #dc3545; margin-top: .25rem; }
   .field-err .form-control { border-color: #dc3545; }
-
   .summary-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: .375rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
   .summary-row { display: flex; justify-content: space-between; font-size: .82rem; padding: .2rem 0; }
   .summary-row .label { color: #6c757d; }
   .summary-row .value { font-weight: 500; max-width: 60%; text-align: right; overflow-wrap: anywhere; }
-
-  .edit-link  { font-size: .7rem; color: #0d6efd; text-decoration: none; cursor: pointer; }
-  .edit-link:hover { text-decoration: underline; }
+  .social-btn { display:flex; align-items:center; justify-content:center; gap:.5rem; }
 </style>
 
 <div class="reg-wrap">
@@ -40,17 +32,37 @@
     <p class="text-muted small mt-1">Create your account</p>
   </div>
 
-  <!-- Progress -->
-  <div class="prog-label" id="prog-label">
-    <span id="prog-text">Step 1 of 6</span>
-    <span id="prog-pct">0%</span>
+  <!-- Social register -->
+  <div class="card shadow-sm mb-3">
+    <div class="card-body p-4">
+      <p class="text-muted small mb-3 text-center">Sign up instantly — we'll pre-fill what we can from your provider.</p>
+      <div class="d-grid gap-2">
+        <a href="{% url 'social:begin' 'google-oauth2' %}" class="btn btn-outline-danger social-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.27 0 3.198 2.698 1.24 6.65l4.026 3.115z"/><path fill="#34A853" d="M16.04 18.013c-1.09.703-2.474 1.078-4.04 1.078a7.077 7.077 0 0 1-6.723-4.823l-4.04 3.067A11.965 11.965 0 0 0 12 24c2.933 0 5.735-1.043 7.834-3l-3.793-2.987z"/><path fill="#4A90E2" d="M19.834 21c2.195-2.048 3.62-5.096 3.62-9 0-.71-.109-1.473-.272-2.182H12v4.637h6.436c-.317 1.559-1.17 2.766-2.395 3.558L19.834 21z"/><path fill="#FBBC05" d="M5.277 14.268A7.12 7.12 0 0 1 4.909 12c0-.782.125-1.533.357-2.235L1.24 6.65A11.934 11.934 0 0 0 0 12c0 1.92.445 3.73 1.237 5.335l4.04-3.067z"/></svg>
+          Continue with Google
+        </a>
+        <a href="{% url 'social:begin' 'github' %}" class="btn btn-outline-dark social-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.335-1.755-1.335-1.755-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23A11.51 11.51 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.298 24 12c0-6.63-5.37-12-12-12z"/></svg>
+          Continue with GitHub
+        </a>
+        <a href="{% url 'social:begin' 'facebook' %}" class="btn btn-outline-primary social-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
+          Continue with Facebook
+        </a>
+      </div>
+    </div>
   </div>
+
+  <div class="d-flex align-items-center mb-3">
+    <hr class="flex-grow-1"><span class="px-2 text-muted small">or register with email</span><hr class="flex-grow-1">
+  </div>
+
+  <!-- Progress -->
+  <div class="prog-label"><span id="prog-text">Step 1 of 6</span><span id="prog-pct">0%</span></div>
   <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
 
   <form method="POST" id="reg-form" action="{% url 'authusers:register' %}" novalidate>
     {% csrf_token %}
-
-    <!-- hidden fields populated by JS on final submit -->
     <input type="hidden" name="first_name"       id="h-first_name">
     <input type="hidden" name="last_name"        id="h-last_name">
     <input type="hidden" name="email"            id="h-email">
@@ -70,79 +82,69 @@
     <input type="hidden" name="github_url"       id="h-github_url">
     <input type="hidden" name="portfolio_url"    id="h-portfolio_url">
 
-    {# ═══ CARD 1 — Identity (required) ═══════════════════════════════════ #}
+    {# CARD 1 — Identity #}
     <div class="reg-card active card shadow-sm" id="card-0">
       <div class="card-body p-4">
         <div class="card-step">Step 1 of 6 · Identity</div>
         <div class="card-title">Who are you? 👋</div>
         <div class="card-sub">Your real name and email. Email is used for password resets.</div>
-
         <div class="row g-3">
           <div class="col-6">
             <div class="form-group {% if errors.first_name %}field-err{% endif %}">
               <label class="field-label">First Name <span class="text-danger">*</span></label>
-              <input class="form-control" id="f-first_name" type="text" placeholder="Jane"
-                     value="{{ post.first_name|default:'' }}" autocomplete="given-name">
+              <input class="form-control" id="f-first_name" type="text" placeholder="Jane" value="{{ post.first_name|default:'' }}" autocomplete="given-name">
               {% if errors.first_name %}<div class="err-text">{{ errors.first_name }}</div>{% endif %}
             </div>
           </div>
           <div class="col-6">
             <div class="form-group {% if errors.last_name %}field-err{% endif %}">
               <label class="field-label">Last Name <span class="text-danger">*</span></label>
-              <input class="form-control" id="f-last_name" type="text" placeholder="Dlamini"
-                     value="{{ post.last_name|default:'' }}" autocomplete="family-name">
+              <input class="form-control" id="f-last_name" type="text" placeholder="Dlamini" value="{{ post.last_name|default:'' }}" autocomplete="family-name">
               {% if errors.last_name %}<div class="err-text">{{ errors.last_name }}</div>{% endif %}
             </div>
           </div>
           <div class="col-12">
             <div class="form-group {% if errors.email %}field-err{% endif %}">
               <label class="field-label">Email Address <span class="text-danger">*</span></label>
-              <input class="form-control" id="f-email" type="email" placeholder="jane@example.com"
-                     value="{{ post.email|default:'' }}" autocomplete="email">
+              <input class="form-control" id="f-email" type="email" placeholder="jane@example.com" value="{{ post.email|default:'' }}" autocomplete="email">
               <div class="form-text">Used for password resets — required.</div>
               {% if errors.email %}<div class="err-text">{{ errors.email }}</div>{% endif %}
             </div>
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-primary" onclick="nextCard(0)">Next →</button>
         </div>
       </div>
     </div>
 
-    {# ═══ CARD 2 — Account credentials (required) ════════════════════════ #}
+    {# CARD 2 — Credentials #}
     <div class="reg-card card shadow-sm" id="card-1">
       <div class="card-body p-4">
         <div class="card-step">Step 2 of 6 · Credentials</div>
         <div class="card-title">Your account details 🔐</div>
         <div class="card-sub">Choose a username and a strong password.</div>
-
         <div class="mb-3">
           <div class="form-group {% if errors.username %}field-err{% endif %}">
             <label class="field-label">Username <span class="text-danger">*</span></label>
-            <input class="form-control" id="f-username" type="text" placeholder="jane_dlamini"
-                   value="{{ post.username|default:'' }}" autocomplete="username">
+            <input class="form-control" id="f-username" type="text" placeholder="jane_dlamini" value="{{ post.username|default:'' }}" autocomplete="username">
             {% if errors.username %}<div class="err-text">{{ errors.username }}</div>{% endif %}
           </div>
         </div>
         <div class="mb-3">
           <div class="form-group {% if errors.password1 %}field-err{% endif %}">
             <label class="field-label">Password <span class="text-danger">*</span></label>
-            <input class="form-control" id="f-password1" type="password" placeholder="Min 8 characters"
-                   autocomplete="new-password">
+            <input class="form-control" id="f-password1" type="password" placeholder="Min 8 characters" autocomplete="new-password">
             {% if errors.password1 %}<div class="err-text">{{ errors.password1 }}</div>{% endif %}
           </div>
         </div>
         <div class="mb-1">
           <div class="form-group {% if errors.password2 %}field-err{% endif %}">
             <label class="field-label">Confirm Password <span class="text-danger">*</span></label>
-            <input class="form-control" id="f-password2" type="password" placeholder="Repeat password"
-                   autocomplete="new-password">
+            <input class="form-control" id="f-password2" type="password" placeholder="Repeat password" autocomplete="new-password">
             {% if errors.password2 %}<div class="err-text">{{ errors.password2 }}</div>{% endif %}
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-outline-secondary" onclick="prevCard(1)">← Back</button>
           <button type="button" class="btn btn-primary" onclick="nextCard(1)">Next →</button>
@@ -150,31 +152,26 @@
       </div>
     </div>
 
-    {# ═══ CARD 3 — Personal details (optional) ══════════════════════════ #}
+    {# CARD 3 — Personal #}
     <div class="reg-card card shadow-sm" id="card-2">
       <div class="card-body p-4">
         <div class="card-step">Step 3 of 6 · Personal</div>
         <div class="card-title">Personal details <span class="opt-badge">optional</span></div>
-        <div class="card-sub">Helps us personalise your experience. All optional.</div>
-
+        <div class="card-sub">All optional.</div>
         <div class="row g-3">
           <div class="col-12 col-sm-6">
             <label class="field-label">Phone <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-phone" type="tel" placeholder="+27 82 000 0000"
-                   value="{{ post.phone|default:'' }}">
+            <input class="form-control" id="f-phone" type="tel" placeholder="+27 82 000 0000" value="{{ post.phone|default:'' }}">
           </div>
           <div class="col-12 col-sm-6">
             <label class="field-label">Date of Birth <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-date_of_birth" type="date"
-                   value="{{ post.date_of_birth|default:'' }}">
+            <input class="form-control" id="f-date_of_birth" type="date" value="{{ post.date_of_birth|default:'' }}">
           </div>
           <div class="col-12">
             <label class="field-label">SA ID Number <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-id_number" type="text" placeholder="13-digit ID number"
-                   value="{{ post.id_number|default:'' }}" maxlength="20">
+            <input class="form-control" id="f-id_number" type="text" placeholder="13-digit ID number" value="{{ post.id_number|default:'' }}" maxlength="20">
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-outline-secondary" onclick="prevCard(2)">← Back</button>
           <button type="button" class="btn btn-primary" onclick="nextCard(2)">Next →</button>
@@ -183,31 +180,26 @@
       </div>
     </div>
 
-    {# ═══ CARD 4 — Location (optional) ══════════════════════════════════ #}
+    {# CARD 4 — Location #}
     <div class="reg-card card shadow-sm" id="card-3">
       <div class="card-body p-4">
         <div class="card-step">Step 4 of 6 · Location</div>
         <div class="card-title">Where are you based? 📍 <span class="opt-badge">optional</span></div>
         <div class="card-sub">Helps match you to relevant regional features.</div>
-
         <div class="row g-3">
           <div class="col-12 col-sm-6">
             <label class="field-label">City <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-city" type="text" placeholder="Johannesburg"
-                   value="{{ post.city|default:'' }}">
+            <input class="form-control" id="f-city" type="text" placeholder="Johannesburg" value="{{ post.city|default:'' }}">
           </div>
           <div class="col-12 col-sm-6">
             <label class="field-label">Province / State <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-province" type="text" placeholder="Gauteng"
-                   value="{{ post.province|default:'' }}">
+            <input class="form-control" id="f-province" type="text" placeholder="Gauteng" value="{{ post.province|default:'' }}">
           </div>
           <div class="col-12">
             <label class="field-label">Country <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-country" type="text" placeholder="South Africa"
-                   value="{{ post.country|default:'' }}">
+            <input class="form-control" id="f-country" type="text" placeholder="South Africa" value="{{ post.country|default:'' }}">
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-outline-secondary" onclick="prevCard(3)">← Back</button>
           <button type="button" class="btn btn-primary" onclick="nextCard(3)">Next →</button>
@@ -216,18 +208,16 @@
       </div>
     </div>
 
-    {# ═══ CARD 5 — Professional (optional) ══════════════════════════════ #}
+    {# CARD 5 — Professional #}
     <div class="reg-card card shadow-sm" id="card-4">
       <div class="card-body p-4">
         <div class="card-step">Step 5 of 6 · Professional</div>
         <div class="card-title">Your work background 💼 <span class="opt-badge">optional</span></div>
         <div class="card-sub">Tell us a little about your professional life.</div>
-
         <div class="row g-3">
           <div class="col-12">
             <label class="field-label">Job Title / Occupation <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-occupation" type="text" placeholder="e.g. Accountant, Software Developer"
-                   value="{{ post.occupation|default:'' }}">
+            <input class="form-control" id="f-occupation" type="text" placeholder="e.g. Accountant, Software Developer" value="{{ post.occupation|default:'' }}">
           </div>
           <div class="col-12 col-sm-6">
             <label class="field-label">Years of Experience <span class="opt-badge">optional</span></label>
@@ -242,11 +232,9 @@
           </div>
           <div class="col-12 col-sm-6">
             <label class="field-label">Industry / Field <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-industry" type="text" placeholder="e.g. Finance, IT, Health"
-                   value="{{ post.industry|default:'' }}">
+            <input class="form-control" id="f-industry" type="text" placeholder="e.g. Finance, IT, Health" value="{{ post.industry|default:'' }}">
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-outline-secondary" onclick="prevCard(4)">← Back</button>
           <button type="button" class="btn btn-primary" onclick="nextCard(4)">Next →</button>
@@ -255,31 +243,26 @@
       </div>
     </div>
 
-    {# ═══ CARD 6 — Online presence (optional) ════════════════════════════ #}
+    {# CARD 6 — Online presence #}
     <div class="reg-card card shadow-sm" id="card-5">
       <div class="card-body p-4">
         <div class="card-step">Step 6 of 6 · Online Presence</div>
         <div class="card-title">Your online profiles 🌐 <span class="opt-badge">optional</span></div>
         <div class="card-sub">Add any links that are relevant to your work.</div>
-
         <div class="row g-3">
           <div class="col-12">
             <label class="field-label">LinkedIn URL <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-linkedin_url" type="url" placeholder="https://linkedin.com/in/..."
-                   value="{{ post.linkedin_url|default:'' }}">
+            <input class="form-control" id="f-linkedin_url" type="url" placeholder="https://linkedin.com/in/..." value="{{ post.linkedin_url|default:'' }}">
           </div>
           <div class="col-12">
             <label class="field-label">GitHub URL <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-github_url" type="url" placeholder="https://github.com/..."
-                   value="{{ post.github_url|default:'' }}">
+            <input class="form-control" id="f-github_url" type="url" placeholder="https://github.com/..." value="{{ post.github_url|default:'' }}">
           </div>
           <div class="col-12">
             <label class="field-label">Portfolio / Website <span class="opt-badge">optional</span></label>
-            <input class="form-control" id="f-portfolio_url" type="url" placeholder="https://..."
-                   value="{{ post.portfolio_url|default:'' }}">
+            <input class="form-control" id="f-portfolio_url" type="url" placeholder="https://..." value="{{ post.portfolio_url|default:'' }}">
           </div>
         </div>
-
         <div class="btn-row">
           <button type="button" class="btn btn-outline-secondary" onclick="prevCard(5)">← Back</button>
           <button type="button" class="btn btn-primary" onclick="goReview()">Review & Create Account →</button>
@@ -288,19 +271,15 @@
       </div>
     </div>
 
-    {# ═══ CARD 7 — Review & submit ════════════════════════════════════════ #}
+    {# CARD 7 — Review #}
     <div class="reg-card card shadow-sm" id="card-6">
       <div class="card-body p-4">
         <div class="card-step">Almost done · Review</div>
         <div class="card-title">Review your details ✅</div>
         <div class="card-sub">Check everything looks right before creating your account.</div>
-
         <div class="summary-box" id="summary"></div>
-
         <div class="d-grid">
-          <button type="submit" class="btn btn-success btn-lg" onclick="populateHidden()">
-            Create My Account →
-          </button>
+          <button type="submit" class="btn btn-success btn-lg" onclick="populateHidden()">Create My Account →</button>
         </div>
         <div class="text-center mt-2">
           <button type="button" class="btn-skip" onclick="goTo(0)">← Start over</button>
@@ -321,22 +300,22 @@ let current = 0;
 const TOTAL = 7;
 
 const fields = {
-  'first_name':       { label: 'First Name',       card: 0 },
-  'last_name':        { label: 'Last Name',         card: 0 },
-  'email':            { label: 'Email',             card: 0 },
-  'username':         { label: 'Username',          card: 1 },
-  'phone':            { label: 'Phone',             card: 2 },
-  'date_of_birth':    { label: 'Date of Birth',     card: 2 },
-  'id_number':        { label: 'SA ID Number',      card: 2 },
-  'city':             { label: 'City',              card: 3 },
-  'province':         { label: 'Province',          card: 3 },
-  'country':          { label: 'Country',           card: 3 },
-  'occupation':       { label: 'Occupation',        card: 4 },
-  'years_experience': { label: 'Experience',        card: 4 },
-  'industry':         { label: 'Industry',          card: 4 },
-  'linkedin_url':     { label: 'LinkedIn',          card: 5 },
-  'github_url':       { label: 'GitHub',            card: 5 },
-  'portfolio_url':    { label: 'Portfolio',         card: 5 },
+  'first_name':       { label: 'First Name',   card: 0 },
+  'last_name':        { label: 'Last Name',     card: 0 },
+  'email':            { label: 'Email',         card: 0 },
+  'username':         { label: 'Username',      card: 1 },
+  'phone':            { label: 'Phone',         card: 2 },
+  'date_of_birth':    { label: 'Date of Birth', card: 2 },
+  'id_number':        { label: 'SA ID Number',  card: 2 },
+  'city':             { label: 'City',          card: 3 },
+  'province':         { label: 'Province',      card: 3 },
+  'country':          { label: 'Country',       card: 3 },
+  'occupation':       { label: 'Occupation',    card: 4 },
+  'years_experience': { label: 'Experience',    card: 4 },
+  'industry':         { label: 'Industry',      card: 4 },
+  'linkedin_url':     { label: 'LinkedIn',      card: 5 },
+  'github_url':       { label: 'GitHub',        card: 5 },
+  'portfolio_url':    { label: 'Portfolio',     card: 5 },
 };
 
 function v(id) { return (document.getElementById('f-' + id)?.value || '').trim(); }
@@ -350,7 +329,7 @@ function showCard(n) {
 }
 
 function updateProgress() {
-  const pct  = Math.round((current / (TOTAL - 1)) * 100);
+  const pct = Math.round((current / (TOTAL - 1)) * 100);
   document.getElementById('prog-fill').style.width = pct + '%';
   document.getElementById('prog-pct').textContent  = pct + '%';
   document.getElementById('prog-text').textContent =
@@ -360,32 +339,27 @@ function updateProgress() {
 function validateCard(n) {
   clearErrors(n);
   const errs = [];
-
   if (n === 0) {
     if (!v('first_name')) errs.push({ id: 'first_name', msg: 'First name is required.' });
     if (!v('last_name'))  errs.push({ id: 'last_name',  msg: 'Last name is required.' });
     const em = v('email');
-    if (!em)                                   errs.push({ id: 'email', msg: 'Email is required.' });
+    if (!em)                                           errs.push({ id: 'email', msg: 'Email is required.' });
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) errs.push({ id: 'email', msg: 'Enter a valid email.' });
   }
-
   if (n === 1) {
-    if (!v('username'))   errs.push({ id: 'username',  msg: 'Username is required.' });
+    if (!v('username'))     errs.push({ id: 'username',  msg: 'Username is required.' });
     const p1 = document.getElementById('f-password1').value;
     const p2 = document.getElementById('f-password2').value;
-    if (!p1)              errs.push({ id: 'password1', msg: 'Password is required.' });
+    if (!p1)                errs.push({ id: 'password1', msg: 'Password is required.' });
     else if (p1.length < 8) errs.push({ id: 'password1', msg: 'At least 8 characters.' });
-    if (p1 && p1 !== p2)  errs.push({ id: 'password2', msg: 'Passwords do not match.' });
+    if (p1 && p1 !== p2)    errs.push({ id: 'password2', msg: 'Passwords do not match.' });
   }
-
   errs.forEach(e => {
-    const wrap = document.getElementById('f-' + e.id)?.closest('.form-group, div');
-    wrap?.classList.add('field-err');
-    let d = document.createElement('div');
+    document.getElementById('f-' + e.id)?.closest('.form-group, div')?.classList.add('field-err');
+    const d = document.createElement('div');
     d.className = 'err-text'; d.textContent = e.msg;
     document.getElementById('f-' + e.id)?.after(d);
   });
-
   return errs.length === 0;
 }
 
@@ -395,11 +369,7 @@ function clearErrors(n) {
   card.querySelectorAll('.field-err').forEach(e => e.classList.remove('field-err'));
 }
 
-function nextCard(n) {
-  if (!validateCard(n)) return;
-  showCard(n + 1);
-}
-
+function nextCard(n) { if (!validateCard(n)) return; showCard(n + 1); }
 function prevCard(n) { showCard(n - 1); }
 function skipTo(n)   { showCard(n); }
 function goReview()  { buildSummary(); showCard(6); }
@@ -409,14 +379,10 @@ function buildSummary() {
   const rows = [];
   Object.entries(fields).forEach(([key, meta]) => {
     const val = v(key);
-    if (val) rows.push(`<div class="summary-row">
-      <span class="label">${meta.label}</span>
-      <span class="value">${val}</span>
-    </div>`);
+    if (val) rows.push(`<div class="summary-row"><span class="label">${meta.label}</span><span class="value">${val}</span></div>`);
   });
   document.getElementById('summary').innerHTML = rows.length
-    ? rows.join('')
-    : '<p class="text-muted small mb-0">Only required fields filled.</p>';
+    ? rows.join('') : '<p class="text-muted small mb-0">Only required fields filled.</p>';
 }
 
 function populateHidden() {

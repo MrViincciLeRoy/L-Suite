@@ -18,4 +18,7 @@ urlpatterns = [
     path('links/add/',             views.social_link_save,   name='link_add'),
     path('links/<int:pk>/edit/',   views.social_link_save,   name='link_edit'),
     path('links/<int:pk>/delete/', views.social_link_delete, name='link_delete'),
+
+    # After social auth creates the user, land here to complete any missing fields
+    path('social/complete/', views.social_complete, name='social_complete'),
 ]

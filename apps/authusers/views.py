@@ -21,6 +21,8 @@ def _get_or_create_profile(user):
     return profile
 
 
+# ── Register ──────────────────────────────────────────────────────────────────
+
 def register_view(request):
     errors = {}
 
@@ -92,6 +94,53 @@ def register_view(request):
     })
 
 
+# ── Social auth complete ───────────────────────────────────────────────────────
+
+@login_required
+def social_complete(request):
+    """
+    Landing page after a successful social login for a brand-new user.
+    Lets them fill in any missing fields (occupation, province, etc.)
+    that the provider couldn't supply. Existing users skip straight to index.
+    """
+    user    = request.user
+    profile = _get_or_create_profile(user)
+
+    if profile.occupation and profile.city:
+        return redirect('main:index')
+
+    if request.method == 'POST':
+        profile.phone            = request.POST.get('phone', profile.phone or '').strip()
+        profile.id_number        = request.POST.get('id_number', profile.id_number or '').strip()
+        profile.city             = request.POST.get('city', profile.city or '').strip()
+        profile.province         = request.POST.get('province', profile.province or '').strip()
+        profile.country          = request.POST.get('country', profile.country or '').strip()
+        profile.occupation       = request.POST.get('occupation', profile.occupation or '').strip()
+        profile.years_experience = request.POST.get('years_experience', profile.years_experience or '').strip()
+        profile.industry         = request.POST.get('industry', profile.industry or '').strip()
+        profile.linkedin_url     = request.POST.get('linkedin_url', profile.linkedin_url or '').strip()
+        profile.github_url       = request.POST.get('github_url', profile.github_url or '').strip()
+        profile.portfolio_url    = request.POST.get('portfolio_url', profile.portfolio_url or '').strip()
+
+        dob = request.POST.get('date_of_birth', '').strip()
+        if dob and not profile.date_of_birth:
+            try:
+                from datetime import date
+                profile.date_of_birth = date.fromisoformat(dob)
+            except ValueError:
+                pass
+
+        profile.save()
+        return redirect('main:index')
+
+    return render(request, 'auth/social_complete.html', {
+        'profile': profile,
+        'user': user,
+    })
+
+
+# ── Login / Logout ────────────────────────────────────────────────────────────
+
 def login_view(request):
     if request.method == 'POST':
         form = AuthenticationForm(data=request.POST)
@@ -109,6 +158,8 @@ def logout_view(request):
     return redirect('authusers:login')
 
 
+# ── Profile ───────────────────────────────────────────────────────────────────
+
 @login_required
 def profile(request):
     social_links = SocialLink.objects.filter(user=request.user)
@@ -117,6 +168,8 @@ def profile(request):
         'platform_suggestions': PLATFORM_SUGGESTIONS,
     })
 
+
+# ── Password Change ───────────────────────────────────────────────────────────
 
 @login_required
 def change_password(request):
@@ -133,6 +186,8 @@ def change_password(request):
         form = PasswordChangeForm(request.user)
     return render(request, 'auth/change_password.html', {'form': form})
 
+
+# ── Password Reset ────────────────────────────────────────────────────────────
 
 def password_reset_request(request):
     if request.method == 'POST':
@@ -177,6 +232,8 @@ def password_reset_confirm(request, uidb64, token):
 def password_reset_complete(request):
     return render(request, 'auth/password_reset_complete.html')
 
+
+# ── Social Links ──────────────────────────────────────────────────────────────
 
 @login_required
 @require_POST

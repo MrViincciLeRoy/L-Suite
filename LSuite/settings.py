@@ -21,6 +21,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # social auth
+    "social_django",
+    # local apps
     "apps.api",
     "apps.authusers",
     "apps.bridge",
@@ -38,6 +41,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "social_django.middleware.SocialAuthExceptionMiddleware",
 ]
 
 ROOT_URLCONF = "LSuite.urls"
@@ -52,6 +56,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "social_django.context_processors.backends",
+                "social_django.context_processors.login_redirect",
             ],
         },
     },
@@ -60,9 +66,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "LSuite.wsgi.application"
 
 # ?? Database ??????????????????????????????????????????????????????????????????
-# Accepts a valid DATABASE_URL (mysql://, postgres://, sqlite://).
-# Falls back to SQLite if the var is missing, empty, or unparseable.
-
 _DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 
 _SQLITE_FALLBACK = {
@@ -83,8 +86,7 @@ if _DATABASE_URL and '://' in _DATABASE_URL and not _DATABASE_URL.startswith(':/
 else:
     DATABASES = _SQLITE_FALLBACK
 
-# ?????????????????????????????????????????????????????????????????????????????
-
+# ?? Auth ??????????????????????????????????????????????????????????????????????
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -92,6 +94,53 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+AUTHENTICATION_BACKENDS = [
+    'social_core.backends.google.GoogleOAuth2',
+    'social_core.backends.github.GithubOAuth2',
+    'social_core.backends.facebook.FacebookOAuth2',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+LOGIN_URL          = '/authusers/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/authusers/login/'
+
+# ?? Social Auth keys ??????????????????????????????????????????????????????????
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY    = os.environ.get('GOOGLE_CLIENT_ID', '')
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE  = [
+    'openid', 'email', 'profile',
+]
+
+SOCIAL_AUTH_GITHUB_KEY    = os.environ.get('GITHUB_CLIENT_ID', '')
+SOCIAL_AUTH_GITHUB_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', '')
+SOCIAL_AUTH_GITHUB_SCOPE  = ['user:email']
+
+SOCIAL_AUTH_FACEBOOK_KEY    = os.environ.get('FACEBOOK_APP_ID', '')
+SOCIAL_AUTH_FACEBOOK_SECRET = os.environ.get('FACEBOOK_APP_SECRET', '')
+SOCIAL_AUTH_FACEBOOK_SCOPE  = ['email', 'public_profile']
+SOCIAL_AUTH_FACEBOOK_PROFILE_EXTRA_PARAMS = {'fields': 'id,name,email,first_name,last_name'}
+
+# After social login completes, redirect here so we can finish profile setup
+SOCIAL_AUTH_LOGIN_REDIRECT_URL  = '/'
+SOCIAL_AUTH_NEW_USER_REDIRECT_URL = '/authusers/social/complete/'
+SOCIAL_AUTH_LOGIN_ERROR_URL     = '/authusers/login/'
+
+# Pipeline ? insert our custom step that pre-fills the profile
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.user.create_user',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+    'apps.authusers.pipeline.save_social_profile',   # our custom step
+)
+
+# ?? i18n / static ?????????????????????????????????????????????????????????????
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
@@ -102,15 +151,15 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+MEDIA_URL  = '/'
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-LOGIN_URL = '/authusers/login/'
 
-GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', '')
-
-EMAIL_BACKEND     = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
-EMAIL_HOST        = os.environ.get('EMAIL_HOST', '')
-EMAIL_PORT        = int(os.environ.get('EMAIL_PORT', 587))
-EMAIL_USE_TLS     = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER   = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'LSuite <noreply@example.com>')
+# ?? Email ?????????????????????????????????????????????????????????????????????
+GOOGLE_REDIRECT_URI   = os.environ.get('GOOGLE_REDIRECT_URI', '')
+EMAIL_BACKEND         = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST            = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT            = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_USE_TLS         = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER       = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD   = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL    = os.environ.get('DEFAULT_FROM_EMAIL', 'LSuite <noreply@example.com>')

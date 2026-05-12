@@ -9,7 +9,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
-        value: "False"
+        value: "True"
       - key: DATABASE_URL
         value: "mysql"
       - key: DB_PASSWORD
