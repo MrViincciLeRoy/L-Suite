@@ -149,7 +149,7 @@ def _zero_shot_classify(description, cat_names, hf_token):
 
     results = client.zero_shot_classification(
         text=description,
-        candidate_labels=cat_names,
+        labels=cat_names,
         model=HF_MODEL_ID,
     )
 
