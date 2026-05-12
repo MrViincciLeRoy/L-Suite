@@ -14,9 +14,19 @@ class PDFParser:
     def parse_pdf(self, pdf_data, bank_name, password=None):
         if bank_name == 'tymebank':
             return self._route_tymebank(pdf_data, password)
+
         text = self._extract_text(pdf_data, password)
-        if bank_name == 'capitec':
+
+        # Auto-detect GoTyme regardless of selected bank
+        if is_gotyme(text):
+            logger.info("GoTyme statement auto-detected — using char-level parser")
+            return GoTymeParser().parse(pdf_data, password)
+
+        if bank_name in ('capitec', 'gotyme'):
+            if bank_name == 'gotyme':
+                return GoTymeParser().parse(pdf_data, password)
             return CapitecParser().parse(text)
+
         return GenericParser().parse(text)
 
     def _route_tymebank(self, pdf_data, password=None):

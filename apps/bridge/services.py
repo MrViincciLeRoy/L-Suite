@@ -109,10 +109,16 @@ BUILTIN_CLUES = {
     "interest": "Interest Income",
     "transfer from current": "Savings & Transfers",
     "transfer from savings": "Savings & Transfers",
+    "transfer from cheque": "Savings & Transfers",
+    "internal transfer": "Savings & Transfers",
     "live better": "Savings Round-up",
     "round-up": "Savings Round-up",
     "round up": "Savings Round-up",
+    "transfer to": "Transfer Out",
     "immediate payment": "Transfer Out",
+    "ewallet": "Transfer Out",
+    "snapscan": "Transfer Out",
+    "send money": "Transfer Out",
     "payshap": "Income",
     "transfer received": "Income",
     "received from": "Income",
@@ -260,11 +266,6 @@ class CategorizationService:
         return None
 
     def auto_categorize_all(self):
-        """
-        Step 1: keyword/tag match from DB.
-        Step 2: for anything still unmatched, fire zero-shot at MIN_ZERO_SHOT_SCORE (0.2).
-        Learns from every zero-shot hit by saving the clue back as a keyword.
-        """
         transactions = list(self._get_processable_transactions())
         if not transactions:
             return 0, 0
@@ -279,7 +280,7 @@ class CategorizationService:
         ai_count = 0
         no_match = []
 
-        # ── pass 1: keyword match ──────────────────────────────────────────
+        # pass 1: DB keyword/tag match
         for txn in transactions:
             cat = self._find_matching_category(txn, good_categories)
             if cat:
@@ -289,15 +290,47 @@ class CategorizationService:
             else:
                 no_match.append(txn)
 
-        # ── pass 2: zero-shot for leftovers ───────────────────────────────
+        # pass 2: BUILTIN_CLUES fallback — works even without seed_categories
+        still_no_match = []
+        for txn in no_match:
+            desc_lower = (txn.description or "").lower()
+            matched_cat_name = None
+            matched_clue = None
+            for clue, cat_name in BUILTIN_CLUES.items():
+                if clue in desc_lower:
+                    matched_cat_name = cat_name
+                    matched_clue = clue
+                    break
+            if matched_cat_name:
+                t_type = txn.transaction_type or ('credit' if txn.deposit else 'debit')
+                cat, _ = TransactionCategory.objects.get_or_create(
+                    name=matched_cat_name,
+                    defaults={
+                        'transaction_type': t_type,
+                        'keywords': matched_clue or '',
+                        'active': True,
+                    },
+                )
+                if matched_clue:
+                    _append_keyword_to_cat(cat, matched_clue)
+                txn.category = cat
+                txn.save()
+                keyword_count += 1
+                # refresh good_categories so later txns benefit immediately
+                if matched_cat_name.lower() not in category_name_map:
+                    category_name_map[matched_cat_name.lower()] = cat
+                    good_categories.append(cat)
+            else:
+                still_no_match.append(txn)
+        no_match = still_no_match
+
+        # pass 3: zero-shot for anything still unmatched
         if no_match and _hf_client:
-            clue_map = _build_clue_map()
-            candidate_labels = [c.name for c in good_categories]
+            candidate_labels = [c.name for c in good_categories] or list(set(BUILTIN_CLUES.values()))
 
             for txn in no_match:
                 desc = txn.description or ""
                 result = classify_transaction(desc)
-
                 score = result.get("score", 0)
                 if score < MIN_ZERO_SHOT_SCORE:
                     logger.info(f"Zero-shot skipped (score={score:.2f}): {desc[:60]}")
@@ -310,20 +343,13 @@ class CategorizationService:
                     txn.category = matched_cat
                     txn.save()
                     ai_count += 1
-
-                    # learn: save clue back as keyword so next run is a KW hit
                     clue = result.get("clue_detected")
                     if not clue:
-                        # derive a clue from the description
                         words = desc.lower().split()
                         clue = next((w for w in words if len(w) > 3), words[0] if words else "")
                     if clue:
                         _append_keyword_to_cat(matched_cat, clue)
-
-                    logger.info(
-                        f"Zero-shot: {desc[:60]} → {matched_cat.name} "
-                        f"[score={score:.2f}, clue={clue!r}]"
-                    )
+                    logger.info(f"Zero-shot: {desc[:60]} → {matched_cat.name} [score={score:.2f}, clue={clue!r}]")
 
         total = len(transactions)
         categorized = keyword_count + ai_count
@@ -331,7 +357,6 @@ class CategorizationService:
         return categorized, total
 
     def auto_categorize_with_ai(self):
-        """Same as auto_categorize_all — kept for backwards compat with views."""
         categorized, total = self.auto_categorize_all()
         return 0, categorized, total
 
@@ -352,7 +377,20 @@ class CategorizationService:
                 )
                 matches.append({'transaction': transaction, 'category': category, 'keyword': matched_keyword})
             else:
-                no_match.append(transaction)
+                # also check BUILTIN_CLUES in preview
+                desc_lower = (transaction.description or "").lower()
+                clue_hit = next(
+                    ((clue, cat_name) for clue, cat_name in BUILTIN_CLUES.items() if clue in desc_lower),
+                    None,
+                )
+                if clue_hit:
+                    matches.append({
+                        'transaction': transaction,
+                        'category': type('_C', (), {'name': clue_hit[1]})(),
+                        'keyword': clue_hit[0],
+                    })
+                else:
+                    no_match.append(transaction)
 
         return {'uncategorized': transactions, 'matches': matches, 'no_match': no_match}
 
@@ -373,6 +411,14 @@ class CategorizationService:
         db_match = self._find_matching_category(t, good_categories)
         if db_match:
             return db_match
+
+        # BUILTIN_CLUES fallback
+        desc_lower = description.lower()
+        for clue, cat_name in BUILTIN_CLUES.items():
+            if clue in desc_lower:
+                cat = TransactionCategory.objects.filter(name=cat_name).first()
+                if cat:
+                    return cat
 
         result = classify_transaction(description)
         if result.get("score", 0) >= MIN_ZERO_SHOT_SCORE and result.get("category") != "Uncategorized":
