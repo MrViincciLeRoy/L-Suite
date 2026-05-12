@@ -133,9 +133,24 @@ def _keyword_match(txn, categories):
     return None
 
 
-def _zero_shot_classify(description, cat_names, hf_token):
-    import requests
+_classifier = None
 
+def _get_classifier():
+    global _classifier
+    if _classifier is None:
+        from transformers import pipeline
+        import torch
+        logger.info(f"Loading model {HF_MODEL_ID} (cached if available)...")
+        _classifier = pipeline(
+            "zero-shot-classification",
+            model=HF_MODEL_ID,
+            device=0 if torch.cuda.is_available() else -1,
+        )
+        logger.info("Model ready.")
+    return _classifier
+
+
+def _zero_shot_classify(description, cat_names, hf_token=None):
     desc_lower = description.lower()
 
     score_boost = {}
@@ -146,16 +161,10 @@ def _zero_shot_classify(description, cat_names, hf_token):
             if not found_clue:
                 found_clue = clue
 
-    resp = requests.post(
-        f"https://router.huggingface.co/hf-inference/models/{HF_MODEL_ID}",
-        headers={"Authorization": f"Bearer {hf_token}"},
-        json={"inputs": description, "parameters": {"candidate_labels": cat_names}},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    classifier = _get_classifier()
+    result = classifier(description, cat_names, multi_label=False)
 
-    score_dict = dict(zip(data["labels"], data["scores"]))
+    score_dict = dict(zip(result["labels"], result["scores"]))
     for cat_name, boost in score_boost.items():
         if cat_name in score_dict:
             score_dict[cat_name] += boost

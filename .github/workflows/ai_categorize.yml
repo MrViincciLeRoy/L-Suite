@@ -30,6 +30,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       GH_REPO: ${{ github.repository }}
       DJANGO_SETTINGS_MODULE: LSuite.settings
+      HF_HOME: /tmp/hf_cache
 
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +40,25 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: /tmp/hf_cache
+          key: hf-model-mDeBERTa-v3-base-mnli-xnli
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Pre-warm model
+        run: |
+          python - <<'EOF'
+          from transformers import pipeline
+          pipe = pipeline(
+              "zero-shot-classification",
+              model="MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+          )
+          print("Model loaded and cached.")
+          EOF
 
       - name: Run AI categorization
         run: |
