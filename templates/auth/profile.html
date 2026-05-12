@@ -3,53 +3,290 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="fas fa-user-circle"></i> My Profile</h1>
+  <h1 class="h2"><i class="fas fa-user-circle"></i> My Profile</h1>
 </div>
 
-<div class="row">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header"><h5>Profile Information</h5></div>
-            <div class="card-body">
-                <dl class="row">
-                    <dt class="col-sm-4">Username:</dt>
-                    <dd class="col-sm-8">{{ request.user.username }}</dd>
-                    <dt class="col-sm-4">Email:</dt>
-                    <dd class="col-sm-8">{{ request.user.email|default:"Not set" }}</dd>
-                    <dt class="col-sm-4">First Name:</dt>
-                    <dd class="col-sm-8">{{ request.user.first_name|default:"Not set" }}</dd>
-                    <dt class="col-sm-4">Last Name:</dt>
-                    <dd class="col-sm-8">{{ request.user.last_name|default:"Not set" }}</dd>
-                </dl>
-                <a href="{% url 'authusers:change_password' %}" class="btn btn-outline-secondary">
-                    <i class="fas fa-lock"></i> Change Password
-                </a>
-            </div>
-        </div>
-    </div>
+<ul class="nav nav-tabs mb-4" id="profileTabs">
+  <li class="nav-item">
+    <a class="nav-link active" data-bs-toggle="tab" href="#tab-info">Account Info</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" href="#tab-links">🔗 Social Links</a>
+  </li>
+</ul>
 
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-header"><h5>Account Details</h5></div>
-            <div class="card-body">
-                <dl class="row">
-                    <dt class="col-sm-5">User ID:</dt>
-                    <dd class="col-sm-7">{{ request.user.id }}</dd>
-                    <dt class="col-sm-5">Status:</dt>
-                    <dd class="col-sm-7"><span class="badge bg-success">Active</span></dd>
-                    <dt class="col-sm-5">Staff:</dt>
-                    <dd class="col-sm-7">
-                        {% if request.user.is_staff %}
-                            <span class="badge bg-danger">Yes</span>
-                        {% else %}
-                            <span class="badge bg-secondary">No</span>
-                        {% endif %}
-                    </dd>
-                    <dt class="col-sm-5">Member Since:</dt>
-                    <dd class="col-sm-7">{{ request.user.date_joined|date:"Y-m-d" }}</dd>
-                </dl>
-            </div>
+<div class="tab-content">
+
+  <!-- ── Account Info ── -->
+  <div class="tab-pane fade show active" id="tab-info">
+    <div class="row">
+      <div class="col-md-8">
+        <div class="card mb-3">
+          <div class="card-header"><h5>Profile Information</h5></div>
+          <div class="card-body">
+            <dl class="row">
+              <dt class="col-sm-4">Username:</dt>
+              <dd class="col-sm-8">{{ request.user.username }}</dd>
+              <dt class="col-sm-4">Email:</dt>
+              <dd class="col-sm-8">{{ request.user.email|default:"Not set" }}</dd>
+              <dt class="col-sm-4">First Name:</dt>
+              <dd class="col-sm-8">{{ request.user.first_name|default:"Not set" }}</dd>
+              <dt class="col-sm-4">Last Name:</dt>
+              <dd class="col-sm-8">{{ request.user.last_name|default:"Not set" }}</dd>
+            </dl>
+            <a href="{% url 'authusers:change_password' %}" class="btn btn-outline-secondary">
+              <i class="fas fa-lock"></i> Change Password
+            </a>
+          </div>
         </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header"><h5>Account Details</h5></div>
+          <div class="card-body">
+            <dl class="row">
+              <dt class="col-sm-5">User ID:</dt>
+              <dd class="col-sm-7">{{ request.user.id }}</dd>
+              <dt class="col-sm-5">Status:</dt>
+              <dd class="col-sm-7"><span class="badge bg-success">Active</span></dd>
+              <dt class="col-sm-5">Staff:</dt>
+              <dd class="col-sm-7">
+                {% if request.user.is_staff %}
+                  <span class="badge bg-danger">Yes</span>
+                {% else %}
+                  <span class="badge bg-secondary">No</span>
+                {% endif %}
+              </dd>
+              <dt class="col-sm-5">Member Since:</dt>
+              <dd class="col-sm-7">{{ request.user.date_joined|date:"Y-m-d" }}</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
     </div>
-</div>
+  </div>
+
+  <!-- ── Social Links ── -->
+  <div class="tab-pane fade" id="tab-links">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Social &amp; Online Links</h5>
+        <button class="btn btn-sm btn-primary" onclick="toggleAddForm()">+ Add Link</button>
+      </div>
+      <div class="card-body">
+
+        <!-- Add form -->
+        <div id="add-link-form" class="border rounded p-3 mb-3 bg-light" style="display:none">
+          <h6 class="mb-3">Add New Link</h6>
+          <div class="mb-2">
+            <small class="text-muted d-block mb-1">Quick pick:</small>
+            <div class="d-flex flex-wrap gap-1" id="platform-hints">
+              {% for p in platform_suggestions %}
+              <span class="badge bg-secondary" style="cursor:pointer" onclick="pickPlatform('{{ p }}')">{{ p }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-4">
+              <label class="form-label small">Platform *</label>
+              <input class="form-control form-control-sm" id="nl-platform" placeholder="e.g. LinkedIn">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">URL *</label>
+              <input class="form-control form-control-sm" id="nl-url" type="url" placeholder="https://...">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <span id="nl-icon-preview" style="font-size:1.5rem">🔗</span>
+            </div>
+          </div>
+          <div class="mt-2">
+            <button class="btn btn-sm btn-success" onclick="saveLink(null)">Save</button>
+            <button class="btn btn-sm btn-secondary ms-1" onclick="toggleAddForm()">Cancel</button>
+          </div>
+          <div id="nl-error" class="text-danger small mt-1" style="display:none"></div>
+        </div>
+
+        <!-- Links list -->
+        <div id="links-list">
+          {% for link in social_links %}
+          <div class="d-flex align-items-center border rounded p-2 mb-2" id="link-{{ link.pk }}">
+            <span style="font-size:1.3rem;width:2rem;text-align:center">{{ link.get_icon }}</span>
+            <div class="flex-grow-1 ms-2">
+              <div class="fw-semibold">{{ link.platform }}</div>
+              <a href="{{ link.url }}" target="_blank" rel="noopener" class="small text-muted">{{ link.url }}</a>
+            </div>
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-outline-secondary" onclick="openEdit({{ link.pk }})">Edit</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="delLink({{ link.pk }})">✕</button>
+            </div>
+          </div>
+          <!-- Inline edit -->
+          <div class="border rounded p-2 mb-2 bg-light" id="link-edit-{{ link.pk }}" style="display:none">
+            <div class="row g-2">
+              <div class="col-md-4">
+                <input class="form-control form-control-sm" id="le-platform-{{ link.pk }}" value="{{ link.platform }}" oninput="previewEditIcon({{ link.pk }})">
+              </div>
+              <div class="col-md-6">
+                <input class="form-control form-control-sm" id="le-url-{{ link.pk }}" type="url" value="{{ link.url }}">
+              </div>
+              <div class="col-md-2 d-flex align-items-center">
+                <span id="le-icon-{{ link.pk }}" style="font-size:1.3rem">{{ link.get_icon }}</span>
+              </div>
+            </div>
+            <div class="mt-2">
+              <button class="btn btn-sm btn-success" onclick="saveLink({{ link.pk }})">Save</button>
+              <button class="btn btn-sm btn-secondary ms-1" onclick="openEdit({{ link.pk }})">Cancel</button>
+            </div>
+            <div id="le-error-{{ link.pk }}" class="text-danger small mt-1" style="display:none"></div>
+          </div>
+          {% empty %}
+          <div class="text-muted small text-center py-4" id="links-empty">No links added yet.</div>
+          {% endfor %}
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tab-content -->
+
+<div id="toast-container" style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:1100"></div>
+
+<script>
+const CSRF = '{{ csrf_token }}';
+const URL_ADD  = '{% url "authusers:link_add" %}';
+const URL_EDIT = id => '{% url "authusers:link_edit" 0 %}'.replace('/0/', '/' + id + '/');
+const URL_DEL  = id => '{% url "authusers:link_delete" 0 %}'.replace('/0/', '/' + id + '/');
+
+const ICONS = {
+  linkedin:'🔗', github:'🐙', twitter:'🐦', instagram:'📷',
+  facebook:'📘', youtube:'▶️', tiktok:'🎵', behance:'🎨',
+  dribbble:'🏀', stackoverflow:'📚', kaggle:'📊',
+  medium:'✍️', substack:'📬', portfolio:'🌐',
+};
+
+function guessIcon(platform) {
+  const k = (platform||'').toLowerCase().split('/')[0].trim();
+  for (const [key, ico] of Object.entries(ICONS)) { if (k.includes(key)) return ico; }
+  return '🔗';
+}
+
+function toast(msg, ok=true) {
+  const el = document.createElement('div');
+  el.className = `alert alert-${ok?'success':'danger'} py-2 px-3 mb-2`;
+  el.style.minWidth = '220px';
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+async function post(url, data) {
+  const fd = new FormData();
+  fd.append('csrfmiddlewaretoken', CSRF);
+  for (const [k,v] of Object.entries(data)) fd.append(k, v);
+  return fetch(url, {method:'POST', body:fd}).then(r => r.json());
+}
+
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function toggleAddForm() {
+  const f = document.getElementById('add-link-form');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+function pickPlatform(name) {
+  document.getElementById('nl-platform').value = name;
+  document.getElementById('nl-icon-preview').textContent = guessIcon(name);
+  document.getElementById('nl-url').focus();
+}
+
+function previewEditIcon(pk) {
+  const p = document.getElementById(`le-platform-${pk}`)?.value || '';
+  const el = document.getElementById(`le-icon-${pk}`);
+  if (el) el.textContent = guessIcon(p);
+}
+
+function openEdit(pk) {
+  const editArea = document.getElementById(`link-edit-${pk}`);
+  editArea.style.display = editArea.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveLink(pk) {
+  const platform = pk
+    ? document.getElementById(`le-platform-${pk}`)?.value?.trim()
+    : document.getElementById('nl-platform')?.value?.trim();
+  const url = pk
+    ? document.getElementById(`le-url-${pk}`)?.value?.trim()
+    : document.getElementById('nl-url')?.value?.trim();
+  const errId = pk ? `le-error-${pk}` : 'nl-error';
+
+  if (!platform || !url) { showErr(errId, 'Platform and URL are required.'); return; }
+  showErr(errId, '');
+
+  const d = await post(pk ? URL_EDIT(pk) : URL_ADD, {platform, url});
+  if (!d.ok) { showErr(errId, d.error || 'Failed.'); return; }
+
+  if (pk) {
+    const row = document.getElementById(`link-${pk}`);
+    row.querySelector('span').textContent = d.icon;
+    row.querySelector('.fw-semibold').textContent = d.platform;
+    const a = row.querySelector('a');
+    a.href = d.url;
+    a.textContent = d.url;
+    openEdit(pk);
+  } else {
+    document.getElementById('links-empty')?.remove();
+    document.getElementById('links-list').insertAdjacentHTML('beforeend', linkRow(d));
+    document.getElementById('nl-platform').value = '';
+    document.getElementById('nl-url').value = '';
+    document.getElementById('nl-icon-preview').textContent = '🔗';
+    document.getElementById('add-link-form').style.display = 'none';
+  }
+  toast('Link saved.');
+}
+
+async function delLink(pk) {
+  if (!confirm('Remove this link?')) return;
+  const d = await post(URL_DEL(pk), {});
+  if (d.ok) { document.getElementById(`link-${pk}`)?.remove(); document.getElementById(`link-edit-${pk}`)?.remove(); toast('Removed.'); }
+  else toast('Failed.', false);
+}
+
+function linkRow(d) {
+  return `
+  <div class="d-flex align-items-center border rounded p-2 mb-2" id="link-${d.id}">
+    <span style="font-size:1.3rem;width:2rem;text-align:center">${d.icon}</span>
+    <div class="flex-grow-1 ms-2">
+      <div class="fw-semibold">${d.platform}</div>
+      <a href="${d.url}" target="_blank" rel="noopener" class="small text-muted">${d.url}</a>
+    </div>
+    <div class="d-flex gap-1">
+      <button class="btn btn-sm btn-outline-secondary" onclick="openEdit(${d.id})">Edit</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="delLink(${d.id})">✕</button>
+    </div>
+  </div>
+  <div class="border rounded p-2 mb-2 bg-light" id="link-edit-${d.id}" style="display:none">
+    <div class="row g-2">
+      <div class="col-md-4"><input class="form-control form-control-sm" id="le-platform-${d.id}" value="${d.platform}" oninput="previewEditIcon(${d.id})"></div>
+      <div class="col-md-6"><input class="form-control form-control-sm" id="le-url-${d.id}" type="url" value="${d.url}"></div>
+      <div class="col-md-2 d-flex align-items-center"><span id="le-icon-${d.id}" style="font-size:1.3rem">${d.icon}</span></div>
+    </div>
+    <div class="mt-2">
+      <button class="btn btn-sm btn-success" onclick="saveLink(${d.id})">Save</button>
+      <button class="btn btn-sm btn-secondary ms-1" onclick="openEdit(${d.id})">Cancel</button>
+    </div>
+    <div id="le-error-${d.id}" class="text-danger small mt-1" style="display:none"></div>
+  </div>`;
+}
+
+document.getElementById('nl-platform')?.addEventListener('input', function() {
+  document.getElementById('nl-icon-preview').textContent = guessIcon(this.value);
+});
+</script>
 {% endblock %}
