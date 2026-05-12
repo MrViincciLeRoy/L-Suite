@@ -89,10 +89,7 @@ def _is_valid_db_url(url):
 if _is_valid_db_url(_DATABASE_URL):
     _db_config = dj_database_url.parse(_DATABASE_URL, conn_max_age=600)
     if _db_config.get('ENGINE', '').endswith('mysql'):
-        opts = _db_config.setdefault('OPTIONS', {})
-        opts.pop('ssl-mode', None)
-        opts.pop('ssl_mode', None)
-        opts['ssl'] = {'ssl_disabled': False}
+        _db_config.setdefault('OPTIONS', {})['ssl'] = {'ssl_disabled': False}
     DATABASES = {'default': _db_config}
 elif not DEBUG:
     raise RuntimeError(
