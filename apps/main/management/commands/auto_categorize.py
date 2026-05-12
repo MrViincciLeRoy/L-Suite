@@ -147,7 +147,7 @@ def _zero_shot_classify(description, cat_names, hf_token):
                 found_clue = clue
 
     resp = requests.post(
-        f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}",
+        f"https://router.huggingface.co/hf-inference/models/{HF_MODEL_ID}",
         headers={"Authorization": f"Bearer {hf_token}"},
         json={"inputs": description, "parameters": {"candidate_labels": cat_names}},
         timeout=30,
