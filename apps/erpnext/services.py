@@ -5,21 +5,24 @@ from apps.main.models import ERPNextSyncLog
 
 logger = logging.getLogger(__name__)
 
-
 class ERPNextService:
     def __init__(self, config):
         self.config = config
+        # Fix for double slash: ensure base_url has no trailing slash
+        self.base_url = config.base_url.rstrip('/')
 
     def _get_headers(self):
         return {
             'Authorization': f'token {self.config.api_key}:{self.config.api_secret}',
             'Content-Type': 'application/json',
             'Accept': 'application/json',
+            # Fix for 417 Expectation Failed: disable 100-continue handshake
+            'Expect': '', 
         }
 
     def test_connection(self):
         try:
-            url = f"{self.config.base_url}/api/method/frappe.auth.get_logged_user"
+            url = f"{self.base_url}/api/method/frappe.auth.get_logged_user"
             response = requests.get(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             user = response.json().get('message', 'Unknown')
@@ -70,7 +73,7 @@ class ERPNextService:
             'reference_number': transaction.reference_number or '',
         }
 
-        url = f"{self.config.base_url}/api/resource/Journal Entry"
+        url = f"{self.base_url}/api/resource/Journal Entry"
 
         try:
             response = requests.post(url, headers=self._get_headers(), json=journal_data, timeout=30)
@@ -113,7 +116,7 @@ class ERPNextService:
 
     def get_chart_of_accounts(self):
         try:
-            url = f"{self.config.base_url}/api/resource/Account"
+            url = f"{self.base_url}/api/resource/Account"
             params = {
                 'fields': '["name", "account_type", "is_group"]',
                 'filters': f'[["company", "=", "{self.config.default_company}"]]',
@@ -128,7 +131,7 @@ class ERPNextService:
 
     def get_cost_centers(self):
         try:
-            url = f"{self.config.base_url}/api/resource/Cost Center"
+            url = f"{self.base_url}/api/resource/Cost Center"
             params = {
                 'fields': '["name", "cost_center_name"]',
                 'filters': f'[["company", "=", "{self.config.default_company}"]]',
