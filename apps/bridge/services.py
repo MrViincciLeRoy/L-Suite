@@ -9,7 +9,7 @@ try:
     from huggingface_hub import InferenceClient
     import os
 
-    HF_TOKEN = os.environ.get("HF_TOKEN", "")
+    HF_TOKEN = os.environ.get("HUGGINGFACE_API_KEY", "") or os.environ.get("HF_TOKEN", "")
     HF_MODEL_ID = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
     _hf_client = InferenceClient(token=HF_TOKEN) if HF_TOKEN else None
 except ImportError:
@@ -38,7 +38,6 @@ JUNK_CATEGORY_NAMES = {
     'digital payments',
     '4th transfer',
     'received interest',
-    # 'transfer' removed — real Transfer/Transfer Out categories now have keywords
 }
 
 BUILTIN_CLUES = {
@@ -101,6 +100,15 @@ BUILTIN_CLUES = {
     "stop payment": "Bank Charges",
     "dishonour": "Bank Charges",
     "unpaid debit": "Bank Charges",
+    "debicheck insufficient": "Bank Charges",
+    "eft debit order insufficient": "Bank Charges",
+    "debicheck authentication": "Bank Charges",
+    "insufficient funds": "Bank Charges",
+    "earned interest": "Interest Income",
+    "interest earned": "Interest Income",
+    "interest": "Interest Income",
+    "transfer from current": "Savings & Transfers",
+    "transfer from savings": "Savings & Transfers",
     "live better": "Savings Round-up",
     "round-up": "Savings Round-up",
     "round up": "Savings Round-up",
@@ -108,7 +116,12 @@ BUILTIN_CLUES = {
     "payshap": "Income",
     "transfer received": "Income",
     "received from": "Income",
+    "salary": "Income",
+    "payroll": "Income",
+    "wages": "Income",
 }
+
+MIN_ZERO_SHOT_SCORE = 0.2
 
 
 def _get_junk_category_ids():
@@ -149,6 +162,17 @@ def _get_candidate_labels():
         return DEFAULT_CATEGORIES
 
 
+def _append_keyword_to_cat(cat: TransactionCategory, keyword: str):
+    if not keyword:
+        return
+    keyword = keyword.strip().lower()
+    existing = [k.strip() for k in cat.keywords.split(",") if k.strip()]
+    if keyword not in existing:
+        existing.append(keyword)
+        cat.keywords = ",".join(existing)
+        cat.save(update_fields=["keywords"])
+
+
 def classify_transaction(transaction: str) -> dict:
     tx_lower = transaction.lower()
     clue_map = _build_clue_map()
@@ -181,6 +205,7 @@ def classify_transaction(transaction: str) -> dict:
             return {
                 "raw": transaction,
                 "category": top_label,
+                "score": top_score,
                 "confidence": confidence,
                 "clue_detected": detected_clue,
                 "method": "hf+clue" if detected_clue else "hf",
@@ -193,6 +218,7 @@ def classify_transaction(transaction: str) -> dict:
         return {
             "raw": transaction,
             "category": clue_category,
+            "score": 1.0,
             "confidence": "Medium",
             "clue_detected": detected_clue,
             "method": "clue_only",
@@ -202,6 +228,7 @@ def classify_transaction(transaction: str) -> dict:
     return {
         "raw": transaction,
         "category": "Uncategorized",
+        "score": 0.0,
         "confidence": "Low",
         "clue_detected": None,
         "method": "none",
@@ -223,63 +250,6 @@ class CategorizationService:
     def _get_processable_transactions(self):
         return _needs_categorization_qs()
 
-    def auto_categorize_all(self):
-        transactions = list(self._get_processable_transactions())
-        if not transactions:
-            return 0, 0
-
-        good_category_objs = [
-            c for c in TransactionCategory.objects.filter(active=True)
-            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
-        ]
-        categorized_count = 0
-
-        for transaction in transactions:
-            category = self._find_matching_category(transaction, good_category_objs)
-            if category:
-                transaction.category = category
-                transaction.save()
-                categorized_count += 1
-                logger.info(f"Auto-categorized transaction {transaction.id} as {category.name}")
-
-        return categorized_count, len(transactions)
-
-    def auto_categorize_with_ai(self):
-        transactions = list(self._get_processable_transactions())
-        if not transactions:
-            return 0, 0, 0
-
-        good_categories = [
-            c for c in TransactionCategory.objects.filter(active=True)
-            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
-        ]
-        category_name_map = {c.name.lower(): c for c in good_categories}
-        keyword_count = 0
-        ai_count = 0
-
-        for transaction in transactions:
-            category = self._find_matching_category(transaction, good_categories)
-            if category:
-                transaction.category = category
-                transaction.save()
-                keyword_count += 1
-                continue
-
-            result = classify_transaction(transaction.description or "")
-            predicted_name = result.get("category", "").lower()
-            matched_cat = category_name_map.get(predicted_name)
-
-            if matched_cat and result.get("confidence") in ("High", "Medium"):
-                transaction.category = matched_cat
-                transaction.save()
-                ai_count += 1
-                logger.info(
-                    f"AI-categorized {transaction.id} → {matched_cat.name} "
-                    f"[{result.get('method')}, {result.get('confidence')}]"
-                )
-
-        return keyword_count, ai_count, len(transactions)
-
     def _find_matching_category(self, transaction, categories):
         if not transaction.description:
             return None
@@ -288,6 +258,82 @@ class CategorizationService:
             if category.matches_description(description_lower):
                 return category
         return None
+
+    def auto_categorize_all(self):
+        """
+        Step 1: keyword/tag match from DB.
+        Step 2: for anything still unmatched, fire zero-shot at MIN_ZERO_SHOT_SCORE (0.2).
+        Learns from every zero-shot hit by saving the clue back as a keyword.
+        """
+        transactions = list(self._get_processable_transactions())
+        if not transactions:
+            return 0, 0
+
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
+        ]
+        category_name_map = {c.name.lower(): c for c in good_categories}
+
+        keyword_count = 0
+        ai_count = 0
+        no_match = []
+
+        # ── pass 1: keyword match ──────────────────────────────────────────
+        for txn in transactions:
+            cat = self._find_matching_category(txn, good_categories)
+            if cat:
+                txn.category = cat
+                txn.save()
+                keyword_count += 1
+            else:
+                no_match.append(txn)
+
+        # ── pass 2: zero-shot for leftovers ───────────────────────────────
+        if no_match and _hf_client:
+            clue_map = _build_clue_map()
+            candidate_labels = [c.name for c in good_categories]
+
+            for txn in no_match:
+                desc = txn.description or ""
+                result = classify_transaction(desc)
+
+                score = result.get("score", 0)
+                if score < MIN_ZERO_SHOT_SCORE:
+                    logger.info(f"Zero-shot skipped (score={score:.2f}): {desc[:60]}")
+                    continue
+
+                predicted_name = result.get("category", "").lower()
+                matched_cat = category_name_map.get(predicted_name)
+
+                if matched_cat:
+                    txn.category = matched_cat
+                    txn.save()
+                    ai_count += 1
+
+                    # learn: save clue back as keyword so next run is a KW hit
+                    clue = result.get("clue_detected")
+                    if not clue:
+                        # derive a clue from the description
+                        words = desc.lower().split()
+                        clue = next((w for w in words if len(w) > 3), words[0] if words else "")
+                    if clue:
+                        _append_keyword_to_cat(matched_cat, clue)
+
+                    logger.info(
+                        f"Zero-shot: {desc[:60]} → {matched_cat.name} "
+                        f"[score={score:.2f}, clue={clue!r}]"
+                    )
+
+        total = len(transactions)
+        categorized = keyword_count + ai_count
+        logger.info(f"auto_categorize_all: {keyword_count} keyword, {ai_count} zero-shot, {total - categorized} unmatched")
+        return categorized, total
+
+    def auto_categorize_with_ai(self):
+        """Same as auto_categorize_all — kept for backwards compat with views."""
+        categorized, total = self.auto_categorize_all()
+        return 0, categorized, total
 
     def preview_categorization(self):
         transactions = list(self._get_processable_transactions())
@@ -329,7 +375,7 @@ class CategorizationService:
             return db_match
 
         result = classify_transaction(description)
-        if result.get("confidence") in ("High", "Medium") and result.get("category") != "Uncategorized":
+        if result.get("score", 0) >= MIN_ZERO_SHOT_SCORE and result.get("category") != "Uncategorized":
             return result
         return None
 
