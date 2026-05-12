@@ -62,8 +62,8 @@ SEED_CATEGORIES = [
         'name': 'Bank Charges',
         'transaction_type': 'debit',
         'color': 13,
-        'keywords': 'set-off,setoff,sms payment notification,sms notification,stop payment,unpaid debit,dishonour,penalty fee,returned item,early settlement,account maintenance,debit order fee,sms fee,card fee,statement fee,dispute fee',
-        'tags': 'setoff,sms,stop payment',
+        'keywords': 'set-off,setoff,sms payment notification,sms notification,stop payment,unpaid debit,dishonour,penalty fee,returned item,early settlement,account maintenance,debit order fee,sms fee,card fee,statement fee,dispute fee,debicheck insufficient funds,eft debit order insufficient funds,debicheck authentication,insufficient funds fee,debit order return,unpaid debit order,debicheck,eft debit order',
+        'tags': 'setoff,sms,stop payment,debicheck,insufficient funds',
     },
     {
         'name': 'Utilities',
@@ -85,6 +85,27 @@ SEED_CATEGORIES = [
         'color': 11,
         'keywords': 'salary,payroll,wages,payment received,transfer received,received from,transfer in,deposit,commission,bonus,dividend,refund,payshap payment received,payshap received',
         'tags': 'salary,payroll,payshap',
+    },
+    {
+        'name': 'Interest Income',
+        'transaction_type': 'credit',
+        'color': 15,
+        'keywords': 'earned interest,interest earned,interest credited,interest paid,savings interest,interest income,interest',
+        'tags': 'interest,earned interest',
+    },
+    {
+        'name': 'Savings & Transfers',
+        'transaction_type': 'credit',
+        'color': 16,
+        'keywords': 'transfer from current,transfer from savings,transfer from cheque,internal transfer,transfer between accounts,transfer from account',
+        'tags': 'transfer from current,internal transfer',
+    },
+    {
+        'name': 'Digital Payments',
+        'transaction_type': 'debit',
+        'color': 17,
+        'keywords': 'client care immediate payment,immediate payment,digital payment,online payment,internet payment,card purchase online,e-payment',
+        'tags': 'immediate payment,digital payment',
     },
     {
         'name': 'Savings Round-up',

@@ -1,0 +1,61 @@
+name: Auto Categorize Transactions
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: 'User ID to categorize (leave empty for all users)'
+        required: false
+        default: ''
+      min_confidence:
+        description: 'Minimum LLM confidence threshold (default 50)'
+        required: false
+        default: '50'
+      dry_run:
+        description: 'Dry run? (true/false)'
+        required: false
+        default: 'false'
+  schedule:
+    # runs every night at 2am UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  categorize:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
+      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: core.settings
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run auto_categorize
+        run: |
+          ARGS=""
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ -n "${{ github.event.inputs.user_id }}" ]; then
+            ARGS="$ARGS --user ${{ github.event.inputs.user_id }}"
+          fi
+
+          if [ -n "${{ github.event.inputs.min_confidence }}" ]; then
+            ARGS="$ARGS --min-confidence ${{ github.event.inputs.min_confidence }}"
+          fi
+
+          python manage.py auto_categorize $ARGS

@@ -6,6 +6,15 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+def _run_auto_categorize(user_id: int):
+    """Runs auto_categorize in the same background thread after PDF parsing."""
+    try:
+        from django.core.management import call_command
+        call_command("auto_categorize", user=user_id)
+    except Exception as e:
+        logger.error(f"auto_categorize failed after PDF import: {e}")
+
+
 def run_pdf_job(job_id, pdf_bytes_list, filenames):
     from apps.main.models import BankTransaction, EmailStatement, PDFImportJob, TransactionCategory
     from apps.bank_parsers.parsers import PDFParser
@@ -103,6 +112,7 @@ def run_pdf_job(job_id, pdf_bytes_list, filenames):
         job.status   = PDFImportJob.STATUS_DONE
         job.progress = 100
         job.save(update_fields=['status', 'progress'])
+        _run_auto_categorize(job.user_id)
 
     except Exception as e:
         try:
