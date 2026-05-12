@@ -318,7 +318,7 @@
 
 <script>
 let current = 0;
-const TOTAL = 7; // cards 0-6
+const TOTAL = 7;
 
 const fields = {
   'first_name':       { label: 'First Name',       card: 0 },
@@ -401,15 +401,9 @@ function nextCard(n) {
 }
 
 function prevCard(n) { showCard(n - 1); }
-
-function skipTo(n) { showCard(n); }
-
-function goReview() {
-  buildSummary();
-  showCard(6);
-}
-
-function goTo(n) { showCard(n); }
+function skipTo(n)   { showCard(n); }
+function goReview()  { buildSummary(); showCard(6); }
+function goTo(n)     { showCard(n); }
 
 function buildSummary() {
   const rows = [];
@@ -430,15 +424,13 @@ function populateHidden() {
     const el = document.getElementById('h-' + key);
     if (el) el.value = v(key);
   });
-  // passwords are not in `fields` (security) — copy directly
   document.getElementById('h-password1').value = document.getElementById('f-password1').value;
   document.getElementById('h-password2').value = document.getElementById('f-password2').value;
 }
 
-// If server returned errors, jump back to the first failing card
 {% if errors %}
 (function () {
-  const errKeys = {{ errors.keys|list|safe }};
+  const errKeys = {{ error_keys|safe }};
   if (!errKeys.length) return;
   const cardNums = errKeys.map(k => (fields[k] || {}).card || 0);
   showCard(Math.min(...cardNums));

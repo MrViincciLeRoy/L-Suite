@@ -16,20 +16,15 @@ from django.template.loader import render_to_string
 from .models import SocialLink, UserProfile, PLATFORM_SUGGESTIONS
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _get_or_create_profile(user):
     profile, _ = UserProfile.objects.get_or_create(user=user)
     return profile
 
 
-# ── Register ──────────────────────────────────────────────────────────────────
-
 def register_view(request):
     errors = {}
 
     if request.method == 'POST':
-        # ── Required fields ──
         first_name = request.POST.get('first_name', '').strip()
         last_name  = request.POST.get('last_name', '').strip()
         email      = request.POST.get('email', '').strip().lower()
@@ -65,7 +60,6 @@ def register_view(request):
                 last_name  = last_name,
             )
 
-            # ── Optional fields saved to profile ──
             profile = _get_or_create_profile(user)
             profile.phone            = request.POST.get('phone', '').strip()
             profile.id_number        = request.POST.get('id_number', '').strip()
@@ -91,10 +85,12 @@ def register_view(request):
             login(request, user)
             return redirect('main:index')
 
-    return render(request, 'auth/register.html', {'errors': errors, 'post': request.POST})
+    return render(request, 'auth/register.html', {
+        'errors': errors,
+        'error_keys': list(errors.keys()),
+        'post': request.POST,
+    })
 
-
-# ── Login / Logout ────────────────────────────────────────────────────────────
 
 def login_view(request):
     if request.method == 'POST':
@@ -113,8 +109,6 @@ def logout_view(request):
     return redirect('authusers:login')
 
 
-# ── Profile ───────────────────────────────────────────────────────────────────
-
 @login_required
 def profile(request):
     social_links = SocialLink.objects.filter(user=request.user)
@@ -123,8 +117,6 @@ def profile(request):
         'platform_suggestions': PLATFORM_SUGGESTIONS,
     })
 
-
-# ── Password Change (logged-in) ───────────────────────────────────────────────
 
 @login_required
 def change_password(request):
@@ -141,8 +133,6 @@ def change_password(request):
         form = PasswordChangeForm(request.user)
     return render(request, 'auth/change_password.html', {'form': form})
 
-
-# ── Password Reset (logged-out email flow) ────────────────────────────────────
 
 def password_reset_request(request):
     if request.method == 'POST':
@@ -187,8 +177,6 @@ def password_reset_confirm(request, uidb64, token):
 def password_reset_complete(request):
     return render(request, 'auth/password_reset_complete.html')
 
-
-# ── Social Links ──────────────────────────────────────────────────────────────
 
 @login_required
 @require_POST
