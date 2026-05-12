@@ -1,46 +1,18 @@
 import uuid
 import logging
-import os
 
-import requests
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
 
-def _dispatch_ai_categorize(user_id: int = None):
-    """
-    Fires the auto_categorize GitHub Actions workflow after a PDF import finishes.
-    Uses GH_TOKEN + GH_REPO env vars.
-    """
-    gh_token = os.environ.get("GH_TOKEN", "")
-    gh_repo = os.environ.get("GH_REPO", "")
-
-    if not gh_token or not gh_repo:
-        logger.warning("GH_TOKEN or GH_REPO not set ? skipping auto-categorize dispatch")
-        return
-
-    inputs = {"dry_run": "false", "min_confidence": "50"}
-    if user_id:
-        inputs["user_id"] = str(user_id)
-
+def _run_auto_categorize(user_id: int):
+    """Runs auto_categorize in the same background thread after PDF parsing."""
     try:
-        resp = requests.post(
-            f"https://api.github.com/repos/{gh_repo}/actions/workflows/auto_categorize.yml/dispatches",
-            headers={
-                "Authorization": f"Bearer {gh_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            json={"ref": "main", "inputs": inputs},
-            timeout=10,
-        )
-        if resp.status_code == 204:
-            logger.info(f"auto_categorize workflow dispatched for user_id={user_id}")
-        else:
-            logger.warning(f"GitHub dispatch failed {resp.status_code}: {resp.text[:200]}")
+        from django.core.management import call_command
+        call_command("auto_categorize", user=user_id)
     except Exception as e:
-        logger.error(f"Failed to dispatch auto_categorize workflow: {e}")
+        logger.error(f"auto_categorize failed after PDF import: {e}")
 
 
 def run_pdf_job(job_id, pdf_bytes_list, filenames):
@@ -140,7 +112,7 @@ def run_pdf_job(job_id, pdf_bytes_list, filenames):
         job.status   = PDFImportJob.STATUS_DONE
         job.progress = 100
         job.save(update_fields=['status', 'progress'])
-        _dispatch_ai_categorize(user_id=job.user_id)
+        _run_auto_categorize(job.user_id)
 
     except Exception as e:
         try:
