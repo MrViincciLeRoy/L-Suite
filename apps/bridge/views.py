@@ -248,7 +248,9 @@ def bulk_operations(request):
         ).count(),
     }
 
-    erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
+    # Prefer active config, fall back to any config so the UI shows it exists
+    active_config = ERPNextConfig.objects.filter(is_active=True).first()
+    any_config = active_config or ERPNextConfig.objects.order_by('-created_at').first()
 
     raw_recent = BankTransaction.objects.order_by('-date')[:10]
     recent_transactions = [
@@ -270,7 +272,8 @@ def bulk_operations(request):
 
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
-        'erpnext_config': erpnext_config,
+        'erpnext_config': active_config,       # None if inactive ? shows "Not Active" state
+        'any_erpnext_config': any_config,       # the config object regardless of active state
         'recent_transactions': recent_transactions,
         'needs_categorizing': needs_categorizing,
     })
@@ -279,15 +282,24 @@ def bulk_operations(request):
 @login_required
 def bulk_sync(request):
     if request.method == 'POST':
+        # Use active config first; if none, try activating the only available one automatically
         config = ERPNextConfig.objects.filter(is_active=True).first()
         if not config:
-            messages.error(request, 'No active ERPNext configuration found.')
+            config = ERPNextConfig.objects.order_by('-created_at').first()
+            if config:
+                config.is_active = True
+                config.save(update_fields=['is_active'])
+                messages.info(request, f'Auto-activated "{config.name}" for sync.')
+
+        if not config:
+            messages.error(request, 'No ERPNext configuration found. Please add one first.')
             return redirect(reverse('bridge:bulk_operations'))
+
         service = BulkSyncService(config)
         try:
             success, failed, total = service.sync_all_ready()
             if success > 0 and failed == 0:
-                messages.success(request, f'Synced all {success} transactions!')
+                messages.success(request, f'Synced all {success} transactions to ERPNext!')
             elif success > 0:
                 messages.warning(request, f'Synced {success}, {failed} failed.')
             elif total == 0:
