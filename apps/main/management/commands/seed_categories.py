@@ -6,7 +6,7 @@ SEED_CATEGORIES = [
         'name': 'Groceries',
         'transaction_type': 'debit',
         'color': 4,
-        'keywords': 'supermarket,checkers,woolworths,pick n pay,spar,shoprite,food lover,clicks food,spaza,tucksho,mart,makro,game store',
+        'keywords': 'supermarket,checkers,woolworths,pick n pay,spar,shoprite,food lover,clicks food,spaza,tucksho,mart,makro,game store,usave,s2s,ccn',
         'tags': 'checkers,woolworths,spar,shoprite,pnp,foodlovers',
     },
     {
@@ -55,8 +55,15 @@ SEED_CATEGORIES = [
         'name': 'Banking & Finance',
         'transaction_type': 'debit',
         'color': 8,
-        'keywords': 'fnb,absa,nedbank,standard bank,capitec,investec,african bank,service fee,bank charge,atm fee,monthly fee,admin fee,interest,insurance premium',
+        'keywords': 'fnb,absa,nedbank,standard bank,capitec,investec,african bank,service fee,bank charge,atm fee,monthly fee,admin fee,interest charged,insurance premium,monthly account admin,branch card replacement,print statement',
         'tags': 'fnb,absa,nedbank,capitec',
+    },
+    {
+        'name': 'Bank Charges',
+        'transaction_type': 'debit',
+        'color': 13,
+        'keywords': 'set-off,setoff,sms payment notification,sms notification,stop payment,unpaid debit,dishonour,penalty fee,returned item,early settlement,account maintenance,debit order fee,sms fee,card fee,statement fee,dispute fee',
+        'tags': 'setoff,sms,stop payment',
     },
     {
         'name': 'Utilities',
@@ -76,15 +83,15 @@ SEED_CATEGORIES = [
         'name': 'Income',
         'transaction_type': 'credit',
         'color': 11,
-        'keywords': 'salary,payroll,wages,payment received,transfer in,deposit,commission,bonus,dividend,refund',
-        'tags': 'salary,payroll',
+        'keywords': 'salary,payroll,wages,payment received,transfer received,received from,transfer in,deposit,commission,bonus,dividend,refund,payshap payment received,payshap received',
+        'tags': 'salary,payroll,payshap',
     },
     {
         'name': 'Transfer',
         'transaction_type': 'debit',
         'color': 12,
-        'keywords': 'transfer to,send money,ewallet,capitec pay,fnb pay,snapscan,zapper,payfast,peach payments',
-        'tags': 'ewallet,snapscan',
+        'keywords': 'transfer to,send money,ewallet,capitec pay,fnb pay,snapscan,zapper,payfast,peach payments,live better,round-up,round up,live better round-up',
+        'tags': 'ewallet,snapscan,livebetter',
     },
 ]
 
