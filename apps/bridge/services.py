@@ -5,10 +5,6 @@ from apps.erpnext.services import ERPNextService
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# AI Classification (HuggingFace zero-shot + DB clue boosting)
-# ---------------------------------------------------------------------------
-
 try:
     from huggingface_hub import InferenceClient
     import os
@@ -25,34 +21,26 @@ DEFAULT_CATEGORIES = [
     "Shopping", "Healthcare", "Telecommunications",
 ]
 
-# Category names treated as junk — transactions here get re-processed automatically.
-# Both British ("uncategorised") and American ("uncategorized") spellings are covered,
-# along with all the placeholder/catch-all categories observed in production data.
 JUNK_CATEGORY_NAMES = {
-    # Uncategorized variants
     'uncategorised',
     'uncategorized',
-    # Generic catch-alls
     'other',
-    #'other income',
+    'other income',
     'other expense',
     'other expenses',
-    # Observed junk from FNB statement parsing
     'fee fees',
     'terminal) fees',
     '***0) fees',
     'sweep transfer',
     'deposit investments',
     'applied transfer',
-    #'fnb cellphone',
+    'fnb cellphone',
     'digital payments',
     '4th transfer',
-    #'received interest',
-    # Transfer — too generic to be useful for ERPNext sync
-    'transfer',
+    'received interest',
+    # 'transfer' removed — real Transfer/Transfer Out categories now have keywords
 }
 
-# Fallback built-in clues — DB clues always take priority over these
 BUILTIN_CLUES = {
     "supermarket": "Groceries",
     "mart": "Groceries",
@@ -107,18 +95,23 @@ BUILTIN_CLUES = {
     "eskom": "Utilities",
     "city power": "Utilities",
     "municipality": "Utilities",
-    "immediate payment": "Transfer",
-    "payshap": "Transfer",
-    "live better": "Transfer",
-    "round-up": "Transfer",
+    "set-off": "Bank Charges",
+    "setoff": "Bank Charges",
+    "sms payment notification": "Bank Charges",
+    "stop payment": "Bank Charges",
+    "dishonour": "Bank Charges",
+    "unpaid debit": "Bank Charges",
+    "live better": "Savings Round-up",
+    "round-up": "Savings Round-up",
+    "round up": "Savings Round-up",
+    "immediate payment": "Transfer Out",
+    "payshap": "Income",
+    "transfer received": "Income",
+    "received from": "Income",
 }
 
 
 def _get_junk_category_ids():
-    """
-    Returns PKs of all categories whose name (case-insensitive) is in JUNK_CATEGORY_NAMES.
-    Uses __iregex to cover both spellings and any whitespace variation.
-    """
     try:
         all_cats = TransactionCategory.objects.values_list('id', 'name')
         return [pk for pk, name in all_cats if name.strip().lower() in JUNK_CATEGORY_NAMES]
@@ -150,7 +143,6 @@ def _get_candidate_labels():
             TransactionCategory.objects.filter(active=True)
             .values_list('name', flat=True)
         )
-        # Filter junk out in Python so we catch both spellings
         names = [n for n in names if n.strip().lower() not in JUNK_CATEGORY_NAMES]
         return names if names else DEFAULT_CATEGORIES
     except Exception:
@@ -217,17 +209,7 @@ def classify_transaction(transaction: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Shared queryset helper
-# ---------------------------------------------------------------------------
-
 def _needs_categorization_qs():
-    """
-    Transactions that need (re)categorizing:
-      - category is null, OR
-      - category is a junk/placeholder category
-    Only unsynced transactions are included.
-    """
     from django.db.models import Q
     junk_ids = _get_junk_category_ids()
     return BankTransaction.objects.filter(
@@ -235,10 +217,6 @@ def _needs_categorization_qs():
         erpnext_synced=False,
     )
 
-
-# ---------------------------------------------------------------------------
-# Categorization Service
-# ---------------------------------------------------------------------------
 
 class CategorizationService:
 
@@ -250,15 +228,9 @@ class CategorizationService:
         if not transactions:
             return 0, 0
 
-        good_categories = list(
-            TransactionCategory.objects.filter(active=True)
-            .values_list('name', 'id')
-        )
-        # Filter junk in Python
         good_category_objs = [
-            TransactionCategory.objects.get(id=pk)
-            for name, pk in good_categories
-            if name.strip().lower() not in JUNK_CATEGORY_NAMES
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
         ]
         categorized_count = 0
 
@@ -273,12 +245,6 @@ class CategorizationService:
         return categorized_count, len(transactions)
 
     def auto_categorize_with_ai(self):
-        """
-        Two-pass categorization covering null AND junk-categorized transactions:
-          Pass 1 — keyword match from DB
-          Pass 2 — HF zero-shot + clue boost for leftovers
-        Returns (keyword_count, ai_count, total)
-        """
         transactions = list(self._get_processable_transactions())
         if not transactions:
             return 0, 0, 0
@@ -368,17 +334,12 @@ class CategorizationService:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Bulk Sync Service
-# ---------------------------------------------------------------------------
-
 class BulkSyncService:
     def __init__(self, erpnext_config):
         self.config = erpnext_config
         self.service = ERPNextService(erpnext_config)
 
     def _syncable_qs(self):
-        """Categorized, unsynced, non-junk transactions."""
         junk_ids = _get_junk_category_ids()
         from django.db.models import Q
         return BankTransaction.objects.filter(

@@ -87,11 +87,18 @@ SEED_CATEGORIES = [
         'tags': 'salary,payroll,payshap',
     },
     {
-        'name': 'Transfer',
+        'name': 'Savings Round-up',
+        'transaction_type': 'debit',
+        'color': 14,
+        'keywords': 'live better,round-up,round up,live better round-up,live better transfer,savings round',
+        'tags': 'livebetter,roundup',
+    },
+    {
+        'name': 'Transfer Out',
         'transaction_type': 'debit',
         'color': 12,
-        'keywords': 'transfer to,send money,ewallet,capitec pay,fnb pay,snapscan,zapper,payfast,peach payments,live better,round-up,round up,live better round-up',
-        'tags': 'ewallet,snapscan,livebetter',
+        'keywords': 'transfer to,send money,ewallet,capitec pay,fnb pay,snapscan,zapper,payfast,peach payments,immediate payment,payshap send',
+        'tags': 'ewallet,snapscan',
     },
 ]
 
