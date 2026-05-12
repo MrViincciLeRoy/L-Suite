@@ -6,7 +6,10 @@ from django.http import JsonResponse
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 from apps.main.models import TransactionCategory, BankTransaction, ERPNextConfig
-from .services import CategorizationService, BulkSyncService, classify_transaction, JUNK_CATEGORY_NAMES
+from .services import (
+    CategorizationService, BulkSyncService, classify_transaction,
+    JUNK_CATEGORY_NAMES, _get_junk_category_ids, _needs_categorization_qs,
+)
 
 ITEMS_PER_PAGE = 20
 
@@ -19,6 +22,7 @@ def categories(request):
             'total': c.transactions.count(),
             'synced': c.transactions.filter(erpnext_synced=True).count(),
             'pending': c.transactions.filter(erpnext_synced=False).count(),
+            'is_junk': c.name.strip().lower() in JUNK_CATEGORY_NAMES,
         })
         for c in cats
     ]
@@ -87,6 +91,7 @@ def category_transactions(request, pk):
     return render(request, 'bridge/category_transactions.html', {
         'category': category,
         'transactions': page,
+        'is_junk': category.name.strip().lower() in JUNK_CATEGORY_NAMES,
     })
 
 
@@ -107,13 +112,6 @@ def auto_categorize(request):
 
 @login_required
 def auto_categorize_ai(request):
-    """
-    Two-pass AI categorization:
-    Pass 1 — keyword match from DB (free, instant)
-    Pass 2 — HF zero-shot + clue boost for leftovers
-    On a confirmed match, also saves the detected clue as a tag on the category
-    so future transactions don't need an API call.
-    """
     if request.method == 'POST':
         service = CategorizationService()
         try:
@@ -156,11 +154,6 @@ def preview_categorization(request):
 
 @login_required
 def classify_single(request):
-    """
-    AJAX endpoint — classify a single raw transaction string without saving.
-    POST body: { "transaction": "Uber* Trip Help.Uber.com (Card 5997)" }
-    Returns the full classify_transaction result dict.
-    """
     if request.method == 'POST':
         import json
         try:
@@ -190,8 +183,6 @@ def categorize_transaction(request, pk):
         transaction.category = category
         transaction.save()
 
-        # Learn: save transaction description words as tags on the category
-        # so future AI passes get a free clue boost
         if transaction.description and hasattr(category, 'add_tag'):
             first_word = transaction.description.split()[0].lower().strip('*').strip()
             if len(first_word) > 2:
@@ -216,27 +207,43 @@ def uncategorize_transaction(request, pk):
 
 @login_required
 def bulk_operations(request):
-    from django.db.models import Q
-    junk_ids = list(TransactionCategory.objects.filter(name__in=JUNK_CATEGORY_NAMES).values_list('id', flat=True))
-    needs_categorization = BankTransaction.objects.filter(
-        Q(category__isnull=True) | Q(category_id__in=junk_ids),
+    junk_ids = _get_junk_category_ids()
+
+    needs_cat_count = _needs_categorization_qs().count()
+
+    categorized_count = BankTransaction.objects.filter(
+        category__isnull=False,
+    ).exclude(category_id__in=junk_ids).count()
+
+    ready_to_sync_count = BankTransaction.objects.filter(
+        category__isnull=False,
         erpnext_synced=False,
-    ).count()
+    ).exclude(category_id__in=junk_ids).count()
+
     stats = {
         'total': BankTransaction.objects.count(),
-        'uncategorized': needs_categorization,
-        'categorized': BankTransaction.objects.filter(category__isnull=False).exclude(category_id__in=junk_ids).count(),
+        'uncategorized': needs_cat_count,
+        'categorized': categorized_count,
         'synced': BankTransaction.objects.filter(erpnext_synced=True).count(),
-        'ready_to_sync': BankTransaction.objects.filter(
-            category__isnull=False, erpnext_synced=False
-        ).exclude(category_id__in=junk_ids).count(),
+        'ready_to_sync': ready_to_sync_count,
+        'junk_categorized': BankTransaction.objects.filter(
+            category_id__in=junk_ids,
+            erpnext_synced=False,
+        ).count() if junk_ids else 0,
+        'truly_null': BankTransaction.objects.filter(
+            category__isnull=True,
+            erpnext_synced=False,
+        ).count(),
     }
+
     erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
     recent_transactions = BankTransaction.objects.order_by('-date')[:10]
+
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
         'erpnext_config': erpnext_config,
         'recent_transactions': recent_transactions,
+        'junk_ids': junk_ids,
     })
 
 

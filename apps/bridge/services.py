@@ -25,12 +25,31 @@ DEFAULT_CATEGORIES = [
     "Shopping", "Healthcare", "Telecommunications",
 ]
 
-# Category names treated as junk — transactions here get re-processed automatically
+# Category names treated as junk — transactions here get re-processed automatically.
+# Both British ("uncategorised") and American ("uncategorized") spellings are covered,
+# along with all the placeholder/catch-all categories observed in production data.
 JUNK_CATEGORY_NAMES = {
-    'uncategorised', 'uncategorized', 'other', 'other income',
-    'fee fees', 'terminal) fees', '***0) fees', 'sweep transfer',
-    'deposit investments', 'applied transfer', 'fnb cellphone',
-    'digital payments', '4th transfer', 'received interest',
+    # Uncategorized variants
+    'uncategorised',
+    'uncategorized',
+    # Generic catch-alls
+    'other',
+    'other income',
+    'other expense',
+    'other expenses',
+    # Observed junk from FNB statement parsing
+    'fee fees',
+    'terminal) fees',
+    '***0) fees',
+    'sweep transfer',
+    'deposit investments',
+    'applied transfer',
+    'fnb cellphone',
+    'digital payments',
+    '4th transfer',
+    'received interest',
+    # Transfer — too generic to be useful for ERPNext sync
+    'transfer',
 }
 
 # Fallback built-in clues — DB clues always take priority over these
@@ -45,6 +64,7 @@ BUILTIN_CLUES = {
     "spaza": "Groceries",
     "pick n pay": "Groceries",
     "spar": "Groceries",
+    "usave": "Groceries",
     "s2s*": "Groceries",
     "ccn*": "Groceries",
     "alcohol": "Groceries",
@@ -88,16 +108,20 @@ BUILTIN_CLUES = {
     "city power": "Utilities",
     "municipality": "Utilities",
     "immediate payment": "Transfer",
+    "payshap": "Transfer",
+    "live better": "Transfer",
+    "round-up": "Transfer",
 }
 
 
 def _get_junk_category_ids():
+    """
+    Returns PKs of all categories whose name (case-insensitive) is in JUNK_CATEGORY_NAMES.
+    Uses __iregex to cover both spellings and any whitespace variation.
+    """
     try:
-        return list(
-            TransactionCategory.objects.filter(
-                name__in=JUNK_CATEGORY_NAMES
-            ).values_list('id', flat=True)
-        )
+        all_cats = TransactionCategory.objects.values_list('id', 'name')
+        return [pk for pk, name in all_cats if name.strip().lower() in JUNK_CATEGORY_NAMES]
     except Exception:
         return []
 
@@ -124,9 +148,10 @@ def _get_candidate_labels():
     try:
         names = list(
             TransactionCategory.objects.filter(active=True)
-            .exclude(name__in=JUNK_CATEGORY_NAMES)
             .values_list('name', flat=True)
         )
+        # Filter junk out in Python so we catch both spellings
+        names = [n for n in names if n.strip().lower() not in JUNK_CATEGORY_NAMES]
         return names if names else DEFAULT_CATEGORIES
     except Exception:
         return DEFAULT_CATEGORIES
@@ -193,24 +218,32 @@ def classify_transaction(transaction: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Shared queryset helper
+# ---------------------------------------------------------------------------
+
+def _needs_categorization_qs():
+    """
+    Transactions that need (re)categorizing:
+      - category is null, OR
+      - category is a junk/placeholder category
+    Only unsynced transactions are included.
+    """
+    from django.db.models import Q
+    junk_ids = _get_junk_category_ids()
+    return BankTransaction.objects.filter(
+        Q(category__isnull=True) | Q(category_id__in=junk_ids),
+        erpnext_synced=False,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Categorization Service
 # ---------------------------------------------------------------------------
 
 class CategorizationService:
 
     def _get_processable_transactions(self):
-        """
-        Returns transactions that need categorizing:
-        - category is null, OR
-        - category is a junk/placeholder category
-        Only unsynced transactions are touched.
-        """
-        junk_ids = _get_junk_category_ids()
-        from django.db.models import Q
-        return BankTransaction.objects.filter(
-            Q(category__isnull=True) | Q(category_id__in=junk_ids),
-            erpnext_synced=False,
-        )
+        return _needs_categorization_qs()
 
     def auto_categorize_all(self):
         transactions = list(self._get_processable_transactions())
@@ -219,12 +252,18 @@ class CategorizationService:
 
         good_categories = list(
             TransactionCategory.objects.filter(active=True)
-            .exclude(name__in=JUNK_CATEGORY_NAMES)
+            .values_list('name', 'id')
         )
+        # Filter junk in Python
+        good_category_objs = [
+            TransactionCategory.objects.get(id=pk)
+            for name, pk in good_categories
+            if name.strip().lower() not in JUNK_CATEGORY_NAMES
+        ]
         categorized_count = 0
 
         for transaction in transactions:
-            category = self._find_matching_category(transaction, good_categories)
+            category = self._find_matching_category(transaction, good_category_objs)
             if category:
                 transaction.category = category
                 transaction.save()
@@ -244,10 +283,10 @@ class CategorizationService:
         if not transactions:
             return 0, 0, 0
 
-        good_categories = list(
-            TransactionCategory.objects.filter(active=True)
-            .exclude(name__in=JUNK_CATEGORY_NAMES)
-        )
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
+        ]
         category_name_map = {c.name.lower(): c for c in good_categories}
         keyword_count = 0
         ai_count = 0
@@ -286,17 +325,17 @@ class CategorizationService:
 
     def preview_categorization(self):
         transactions = list(self._get_processable_transactions())
-        good_categories = list(
-            TransactionCategory.objects.filter(active=True)
-            .exclude(name__in=JUNK_CATEGORY_NAMES)
-        )
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
+        ]
 
         matches, no_match = [], []
         for transaction in transactions:
             category = self._find_matching_category(transaction, good_categories)
             if category:
                 matched_keyword = next(
-                    (kw for kw in category.get_keywords_list() if kw in transaction.description.lower()),
+                    (kw for kw in category.get_keywords_list() if kw in (transaction.description or '').lower()),
                     None,
                 )
                 matches.append({'transaction': transaction, 'category': category, 'keyword': matched_keyword})
@@ -309,10 +348,10 @@ class CategorizationService:
         if not description:
             return None
 
-        good_categories = list(
-            TransactionCategory.objects.filter(active=True)
-            .exclude(name__in=JUNK_CATEGORY_NAMES)
-        )
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_CATEGORY_NAMES
+        ]
 
         class _FakeTxn:
             pass
@@ -338,11 +377,17 @@ class BulkSyncService:
         self.config = erpnext_config
         self.service = ERPNextService(erpnext_config)
 
-    def sync_all_ready(self):
-        ready = list(BankTransaction.objects.filter(
+    def _syncable_qs(self):
+        """Categorized, unsynced, non-junk transactions."""
+        junk_ids = _get_junk_category_ids()
+        from django.db.models import Q
+        return BankTransaction.objects.filter(
             category__isnull=False,
             erpnext_synced=False,
-        ).exclude(category__name__in=JUNK_CATEGORY_NAMES))
+        ).exclude(category_id__in=junk_ids)
+
+    def sync_all_ready(self):
+        ready = list(self._syncable_qs())
         if not ready:
             return 0, 0, 0
 
@@ -370,12 +415,13 @@ class BulkSyncService:
         return success_count, failed_count, len(transactions)
 
     def sync_by_date_range(self, start_date, end_date):
+        junk_ids = _get_junk_category_ids()
         transactions = list(BankTransaction.objects.filter(
             category__isnull=False,
             erpnext_synced=False,
             date__gte=start_date,
             date__lte=end_date,
-        ).exclude(category__name__in=JUNK_CATEGORY_NAMES))
+        ).exclude(category_id__in=junk_ids))
         success_count, failed_count = 0, 0
         for transaction in transactions:
             try:
