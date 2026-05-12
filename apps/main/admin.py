@@ -1,5 +1,4 @@
 from django.contrib import admin
-#from django.contrib.auth.decorators import login_required, current_user
 from .models import *
 
 admin.site.register(BankAccount)
