@@ -190,6 +190,32 @@ def fetch_cost_centers(request):
         return JsonResponse({'success': True, 'cost_centers': cost_centers})
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
+ITEMS_PER_PAGE = 20
+
+
+@login_required
+def categories(request):
+    cats = TransactionCategory.objects.order_by('name')
+    categories_with_stats = [
+        (c, {
+            'total': c.transactions.count(),
+            'synced': c.transactions.filter(erpnext_synced=True).count(),
+            'pending': c.transactions.filter(erpnext_synced=False).count(),
+            'is_junk': c.name.strip().lower() in JUNK_CATEGORY_NAMES,
+        })
+        for c in cats
+    ]
+
+    # Pass ERPNext config status so the template can show connection state
+    active_config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
+    any_config = active_config or ERPNextConfig.objects.filter(user=request.user).order_by('-created_at').first()
+
+    return render(request, 'bridge/categories.html', {
+        'categories_with_stats': categories_with_stats,
+        'erpnext_config': active_config,
+        'any_erpnext_config': any_config,
+    })
+
 
 
 @login_required
