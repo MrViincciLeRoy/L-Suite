@@ -14,3 +14,5 @@ PyPDF2
 pytz
 social-auth-app-django
 huggingface_hub==0.23.0
+transformers>=4.40.0
+torch
