@@ -14,10 +14,10 @@
 <div class="row">
     {% for config in configs %}
     <div class="col-md-6 mb-4">
-        <div class="card">
+        <div class="card {% if config.is_active %}border-success{% endif %}">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">{{ config.name }}</h5>
-                {% if config.active %}
+                {% if config.is_active %}
                     <span class="badge bg-success">Active</span>
                 {% else %}
                     <span class="badge bg-secondary">Inactive</span>
@@ -48,16 +48,22 @@
                 </dl>
             </div>
             <div class="card-footer">
-                <div class="btn-group" role="group">
-                    <form method="POST" action="{% url 'erpnext:test_connection' pk=config.id %}" style="display: inline;">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-info btn-sm">
-                            <i class="fas fa-plug"></i> Test Connection
-                        </button>
-                    </form>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-info btn-sm"
+                            onclick="testConnection({{ config.id }}, this)">
+                        <i class="fas fa-plug"></i> Test Connection
+                    </button>
                     <a href="{% url 'erpnext:edit_config' pk=config.id %}" class="btn btn-warning btn-sm">
                         <i class="fas fa-edit"></i> Edit
                     </a>
+                    {% if not config.is_active %}
+                    <form method="POST" action="{% url 'erpnext:activate_config' pk=config.id %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success btn-sm">
+                            <i class="fas fa-check-circle"></i> Set Active
+                        </button>
+                    </form>
+                    {% endif %}
                     <button type="button" class="btn btn-danger btn-sm"
                             data-bs-toggle="modal"
                             data-bs-target="#deleteModal{{ config.id }}">
@@ -121,4 +127,31 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+function testConnection(configId, btn) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+
+    fetch(`/erpnext/configs/${configId}/test/`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.innerHTML = original;
+        btn.disabled = false;
+        if (data.success) {
+            alert('? ' + data.message);
+        } else {
+            alert('? ' + data.message);
+        }
+    })
+    .catch(() => {
+        btn.innerHTML = original;
+        btn.disabled = false;
+        alert('? Request failed.');
+    });
+}
+</script>
 {% endblock %}
