@@ -160,14 +160,11 @@ def classify_single(request):
             body = json.loads(request.body)
         except Exception:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
         raw = body.get('transaction', '').strip()
         if not raw:
             return JsonResponse({'error': 'transaction field required'}, status=400)
-
         result = classify_transaction(raw)
         return JsonResponse(result)
-
     return JsonResponse({'error': 'POST required'}, status=405)
 
 
@@ -182,12 +179,10 @@ def categorize_transaction(request, pk):
         category = get_object_or_404(TransactionCategory, pk=category_id)
         transaction.category = category
         transaction.save()
-
         if transaction.description and hasattr(category, 'add_tag'):
             first_word = transaction.description.split()[0].lower().strip('*').strip()
             if len(first_word) > 2:
                 category.add_tag(first_word)
-
         messages.success(request, f'Categorized as "{category.name}".')
     return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
 
@@ -208,6 +203,7 @@ def uncategorize_transaction(request, pk):
 @login_required
 def bulk_operations(request):
     junk_ids = _get_junk_category_ids()
+    junk_ids_set = set(junk_ids)
 
     needs_cat_count = _needs_categorization_qs().count()
 
@@ -237,13 +233,22 @@ def bulk_operations(request):
     }
 
     erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
-    recent_transactions = BankTransaction.objects.order_by('-date')[:10]
+
+    # Pre-compute is_junk per transaction in Python ? Django templates can't
+    # evaluate expressions like `trans.category and trans.category_id in junk_ids`
+    raw_recent = BankTransaction.objects.order_by('-date')[:10]
+    recent_transactions = [
+        {
+            'obj': t,
+            'is_junk': bool(t.category_id and t.category_id in junk_ids_set),
+        }
+        for t in raw_recent
+    ]
 
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
         'erpnext_config': erpnext_config,
         'recent_transactions': recent_transactions,
-        'junk_ids': junk_ids,
     })
 
 

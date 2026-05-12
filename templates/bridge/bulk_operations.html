@@ -55,7 +55,7 @@
     <div>
         <strong>{{ stats.junk_categorized }} transaction{{ stats.junk_categorized|pluralize }} stuck in placeholder categories</strong>
         (e.g. "Uncategorised", "Other Income", "Transfer") — these are included in the
-        <strong>Needs Categorizing</strong> count above and will be processed by Auto-Categorize.
+        <strong>Needs Categorizing</strong> count and will be re-processed by Auto-Categorize.
         {% if stats.truly_null %}
         There {{ stats.truly_null|pluralize:"is,are" }} also <strong>{{ stats.truly_null }}</strong>
         transaction{{ stats.truly_null|pluralize }} with no category at all.
@@ -81,7 +81,7 @@
                 </p>
                 <dl class="row mb-3">
                     <dt class="col-sm-7">Needs categorizing:</dt>
-                    <dd class="col-sm-5"><strong>{{ stats.uncategorized }}</strong> transactions</dd>
+                    <dd class="col-sm-5"><strong>{{ stats.uncategorized }}</strong></dd>
                     {% if stats.junk_categorized %}
                     <dt class="col-sm-7 text-muted small">— placeholder categories:</dt>
                     <dd class="col-sm-5 text-muted small">{{ stats.junk_categorized }}</dd>
@@ -103,7 +103,7 @@
                     <form method="POST" action="{% url 'bridge:auto_categorize_ai' %}">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-outline-primary w-100"
-                                onclick="return confirm('Run AI categorization on {{ stats.uncategorized }} transactions? This uses HuggingFace if configured.')">
+                                onclick="return confirm('Run AI categorization on {{ stats.uncategorized }} transactions?')">
                             <i class="fas fa-robot"></i> Auto-Categorize with AI ({{ stats.uncategorized }})
                         </button>
                     </form>
@@ -130,7 +130,7 @@
                 </p>
                 <dl class="row mb-3">
                     <dt class="col-sm-7">Ready to sync:</dt>
-                    <dd class="col-sm-5"><strong>{{ stats.ready_to_sync }}</strong> transactions</dd>
+                    <dd class="col-sm-5"><strong>{{ stats.ready_to_sync }}</strong></dd>
                     <dt class="col-sm-7">ERPNext status:</dt>
                     <dd class="col-sm-5">
                         {% if erpnext_config %}
@@ -185,8 +185,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for trans in recent_transactions %}
-                    {% with is_junk=trans.category and trans.category_id in junk_ids %}
+                    {% for row in recent_transactions %}
+                    {% with trans=row.obj is_junk=row.is_junk %}
                     <tr style="cursor:pointer;" onclick="window.location='{% url 'gmail:transaction_detail' trans.pk %}'">
                         <td>{{ trans.date }}</td>
                         <td>{{ trans.description|truncatechars:40 }}</td>
@@ -225,7 +225,7 @@
                             {% elif trans.category and not is_junk %}
                                 <span class="text-warning"><i class="fas fa-clock"></i> Pending</span>
                             {% elif is_junk %}
-                                <span class="text-warning"><i class="fas fa-exclamation"></i> Needs re-cat</span>
+                                <span class="text-warning"><i class="fas fa-exclamation"></i> Re-categorize</span>
                             {% else %}
                                 <span class="text-muted"><i class="fas fa-minus"></i> Not Ready</span>
                             {% endif %}
