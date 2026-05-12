@@ -1,4 +1,3 @@
-import json
 import logging
 
 from django.core.management.base import BaseCommand
@@ -8,68 +7,87 @@ from apps.main.models import BankTransaction, TransactionCategory
 
 logger = logging.getLogger(__name__)
 
+HF_MODEL_ID = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
 
-# ── HF call (mirrors your utils/llm.py hf_call pattern) ────────────────────
-def _llm_categorize(description: str, txn_type: str, existing_categories: list) -> dict:
-    import requests
-    from django.conf import settings
-
-    cats_str = "\n".join(f"- {c}" for c in existing_categories)
-    prompt = f"""<s>[INST] You are a South African bank transaction categorizer.
-
-Transaction description: "{description}"
-Transaction type: {txn_type} (credit = money in, debit = money out)
-
-Existing categories:
-{cats_str}
-
-Task:
-1. Pick the BEST matching category from the list above.
-2. If none fit, return "NEW" and suggest a short category name.
-3. Extract a short keyword (1-3 words) from the description to save for future matching.
-
-Respond ONLY with valid JSON, no markdown, no extra text:
-{{
-  "category": "<exact category name from list, or NEW>",
-  "new_name": "<only if NEW, else empty string>",
-  "keyword": "<short keyword>",
-  "confidence": <0-100>
-}} [/INST]"""
-
-    headers = {"Authorization": f"Bearer {settings.HUGGINGFACE_API_KEY}"}
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 200,
-            "temperature": 0.1,
-            "return_full_text": False,
-        },
-    }
-
-    response = requests.post(
-        "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2",
-        headers=headers,
-        json=payload,
-        timeout=60,
-    )
-    response.raise_for_status()
-    raw = response.json()
-
-    # HF returns list of generated_text
-    if isinstance(raw, list):
-        text = raw[0].get("generated_text", "")
-    else:
-        text = raw.get("generated_text", "")
-
-    text = text.strip().replace("```json", "").replace("```", "").strip()
-
-    # extract JSON object in case there's trailing text
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    if start == -1 or end == 0:
-        raise ValueError(f"No JSON in response: {text[:200]}")
-
-    return json.loads(text[start:end])
+CLUE_MAP = {
+    "supermarket": "Groceries",
+    "mart": "Groceries",
+    "checkers": "Groceries",
+    "woolworths": "Groceries",
+    "pick n pay": "Groceries",
+    "shoprite": "Groceries",
+    "spar": "Groceries",
+    "food lover": "Groceries",
+    "usave": "Groceries",
+    "caltex": "Fuel",
+    "shell": "Fuel",
+    "sasol": "Fuel",
+    "engen": "Fuel",
+    "petrol": "Fuel",
+    "fuel": "Fuel",
+    "uber": "Transport",
+    "bolt": "Transport",
+    "taxi": "Transport",
+    "gautrain": "Transport",
+    "nando": "Food & Dining",
+    "kfc": "Food & Dining",
+    "mcdonalds": "Food & Dining",
+    "steers": "Food & Dining",
+    "wimpy": "Food & Dining",
+    "pizza": "Food & Dining",
+    "restaurant": "Food & Dining",
+    "cafe": "Food & Dining",
+    "coffee": "Food & Dining",
+    "netflix": "Entertainment",
+    "showmax": "Entertainment",
+    "dstv": "Entertainment",
+    "spotify": "Entertainment",
+    "cinema": "Entertainment",
+    "dischem": "Healthcare",
+    "pharmacy": "Healthcare",
+    "clicks": "Healthcare",
+    "clinic": "Healthcare",
+    "hospital": "Healthcare",
+    "doctor": "Healthcare",
+    "vodacom": "Telecommunications",
+    "mtn": "Telecommunications",
+    "telkom": "Telecommunications",
+    "airtime": "Telecommunications",
+    "recharge": "Telecommunications",
+    "eskom": "Utilities",
+    "municipality": "Utilities",
+    "electricity": "Utilities",
+    "water rates": "Utilities",
+    "takealot": "Shopping",
+    "mr price": "Shopping",
+    "pep": "Shopping",
+    "ackermans": "Shopping",
+    "salary": "Income",
+    "payroll": "Income",
+    "wages": "Income",
+    "payshap": "Income",
+    "earned interest": "Interest Income",
+    "interest earned": "Interest Income",
+    "interest": "Interest Income",
+    "transfer from current": "Savings & Transfers",
+    "transfer from savings": "Savings & Transfers",
+    "internal transfer": "Savings & Transfers",
+    "debicheck insufficient": "Bank Charges",
+    "eft debit order insufficient": "Bank Charges",
+    "debicheck authentication": "Bank Charges",
+    "insufficient funds": "Bank Charges",
+    "service fee": "Banking & Finance",
+    "bank charge": "Banking & Finance",
+    "monthly fee": "Banking & Finance",
+    "admin fee": "Banking & Finance",
+    "client care immediate payment": "Digital Payments",
+    "immediate payment": "Digital Payments",
+    "round-up": "Savings Round-up",
+    "live better": "Savings Round-up",
+    "ewallet": "Transfer Out",
+    "send money": "Transfer Out",
+    "snapscan": "Transfer Out",
+}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -87,15 +105,49 @@ def _keyword_match(txn: BankTransaction, categories) -> TransactionCategory | No
     return None
 
 
+def _zero_shot_classify(description: str, cat_names: list, hf_token: str) -> dict:
+    from huggingface_hub import InferenceClient
+
+    client = InferenceClient(token=hf_token)
+    desc_lower = description.lower()
+
+    # find clue boost
+    found_clue = None
+    score_boost = {}
+    for clue, cat_name in CLUE_MAP.items():
+        if clue in desc_lower and cat_name in cat_names:
+            score_boost[cat_name] = score_boost.get(cat_name, 0) + 0.5
+            if not found_clue:
+                found_clue = clue
+
+    results = client.zero_shot_classification(
+        text=description,
+        candidate_labels=cat_names,
+        model=HF_MODEL_ID,
+    )
+
+    score_dict = {r["label"]: r["score"] for r in results}
+
+    for cat_name, boost in score_boost.items():
+        if cat_name in score_dict:
+            score_dict[cat_name] += boost
+
+    sorted_items = sorted(score_dict.items(), key=lambda x: x[1], reverse=True)
+    top_label, top_score = sorted_items[0]
+    confidence = "high" if top_score > 0.8 else "medium" if top_score > 0.5 else "low"
+
+    return {
+        "category": top_label,
+        "score": top_score,
+        "confidence": confidence,
+        "clue": found_clue,
+    }
+
+
 def _get_or_create_category(name: str, txn_type: str) -> TransactionCategory:
     cat, _ = TransactionCategory.objects.get_or_create(
         name=name,
-        defaults={
-            "transaction_type": txn_type,
-            "keywords": "",
-            "tags": "",
-            "active": True,
-        },
+        defaults={"transaction_type": txn_type, "keywords": "", "tags": "", "active": True},
     )
     return cat
 
@@ -111,19 +163,62 @@ def _append_keyword(cat: TransactionCategory, keyword: str):
         cat.save(update_fields=["keywords"])
 
 
-# ── command ──────────────────────────────────────────────────────────────────
+# ── callable from pdf_upload.py ───────────────────────────────────────────────
+def run_auto_categorize(user_id: int = None, min_score: float = 0.5):
+    from django.conf import settings
+    hf_token = settings.HUGGINGFACE_API_KEY
+
+    qs = BankTransaction.objects.filter(category__isnull=True)
+    if user_id:
+        qs = qs.filter(user_id=user_id)
+
+    for txn in qs.iterator():
+        desc = txn.description.strip()
+        t = _txn_type(txn)
+        categories = list(TransactionCategory.objects.filter(active=True))
+
+        matched = _keyword_match(txn, categories)
+        if matched:
+            txn.category = matched
+            txn.save(update_fields=["category"])
+            continue
+
+        cat_names = [c.name for c in categories]
+        try:
+            result = _zero_shot_classify(desc, cat_names, hf_token)
+        except Exception as e:
+            logger.error(f"zero-shot failed for '{desc}': {e}")
+            continue
+
+        if result["score"] < min_score:
+            continue
+
+        clue = result["clue"] or desc.split()[0].lower()
+        with transaction.atomic():
+            cat = TransactionCategory.objects.filter(name=result["category"]).first()
+            if not cat:
+                cat = _get_or_create_category(result["category"], t)
+            _append_keyword(cat, clue)
+            txn.category = cat
+            txn.save(update_fields=["category"])
+
+
+# ── management command ────────────────────────────────────────────────────────
 class Command(BaseCommand):
-    help = "Auto-categorize transactions: keyword match first, HuggingFace Mistral-7B zero-shot fallback"
+    help = "Auto-categorize: DB keyword match first, then mDeBERTa zero-shot fallback"
 
     def add_arguments(self, parser):
-        parser.add_argument("--all", action="store_true", help="Re-run on ALL transactions, not just uncategorized")
+        parser.add_argument("--all", action="store_true", help="Re-run on ALL transactions")
         parser.add_argument("--user", type=int, help="Limit to a specific user ID")
-        parser.add_argument("--dry-run", action="store_true", help="Print decisions without saving")
-        parser.add_argument("--min-confidence", type=int, default=50, help="Minimum LLM confidence to apply (default 50)")
+        parser.add_argument("--dry-run", action="store_true", help="Print without saving")
+        parser.add_argument("--min-score", type=float, default=0.5, help="Minimum zero-shot score (default 0.5)")
 
     def handle(self, *args, **options):
+        from django.conf import settings
+
         dry = options["dry_run"]
-        min_conf = options["min_confidence"]
+        min_score = options["min_score"]
+        hf_token = settings.HUGGINGFACE_API_KEY
 
         qs = BankTransaction.objects.all() if options["all"] else BankTransaction.objects.filter(category__isnull=True)
         if options.get("user"):
@@ -136,20 +231,14 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Processing {total} transactions...\n")
 
-        keyword_hits = 0
-        llm_hits = 0
-        llm_new = 0
-        llm_skipped = 0
-        errors = 0
+        keyword_hits = llm_hits = llm_new = llm_skipped = errors = 0
 
         for txn in qs.iterator():
             desc = txn.description.strip()
             t = _txn_type(txn)
-
-            # reload categories each iteration so newly created ones are picked up immediately
             categories = list(TransactionCategory.objects.filter(active=True))
 
-            # 1. Fast keyword match — no API call
+            # 1. DB keyword match
             matched = _keyword_match(txn, categories)
             if matched:
                 if not dry:
@@ -159,62 +248,56 @@ class Command(BaseCommand):
                 self.stdout.write(f"  [KW]  {desc[:60]:<60} → {matched.name}")
                 continue
 
-            # 2. HuggingFace Mistral-7B zero-shot
+            # 2. mDeBERTa zero-shot
             cat_names = [c.name for c in categories]
             try:
-                result = _llm_categorize(desc, t, cat_names)
+                result = _zero_shot_classify(desc, cat_names, hf_token)
             except Exception as e:
                 errors += 1
                 self.stdout.write(self.style.ERROR(f"  [ERR] {desc[:60]} — {e}"))
                 continue
 
-            confidence = result.get("confidence", 0)
-            keyword = result.get("keyword", "").strip().lower()
-            cat_name = result.get("category", "").strip()
-            new_name = result.get("new_name", "").strip()
+            score = result["score"]
+            cat_name = result["category"]
+            confidence = result["confidence"]
+            clue = result["clue"] or desc.split()[0].lower()
 
-            if confidence < min_conf:
+            if score < min_score:
                 llm_skipped += 1
                 self.stdout.write(self.style.WARNING(
-                    f"  [LOW] {desc[:60]:<60} → {cat_name} (conf={confidence})"
+                    f"  [LOW] {desc[:60]:<60} → {cat_name} ({confidence}, {score:.2f})"
                 ))
                 continue
 
-            if cat_name == "NEW" and new_name:
-                if not dry:
-                    with transaction.atomic():
-                        cat = _get_or_create_category(new_name, t)
-                        _append_keyword(cat, keyword)
-                        txn.category = cat
-                        txn.save(update_fields=["category"])
+            # very low score even after clue boost = genuinely unknown, make new category
+            is_new = score < 0.35 and not result["clue"]
+            final_name = desc.split()[0].title() if is_new else cat_name
+
+            if not dry:
+                with transaction.atomic():
+                    cat = TransactionCategory.objects.filter(name=final_name).first()
+                    if not cat:
+                        cat = _get_or_create_category(final_name, t)
+                    _append_keyword(cat, clue)
+                    txn.category = cat
+                    txn.save(update_fields=["category"])
+
+            if is_new:
                 llm_new += 1
                 self.stdout.write(self.style.SUCCESS(
-                    f"  [NEW] {desc[:60]:<60} → {new_name!r} (kw={keyword!r})"
+                    f"  [NEW] {desc[:60]:<60} → {final_name!r} (kw={clue!r})"
                 ))
-
-            elif cat_name in cat_names:
-                if not dry:
-                    with transaction.atomic():
-                        cat = TransactionCategory.objects.get(name=cat_name)
-                        _append_keyword(cat, keyword)
-                        txn.category = cat
-                        txn.save(update_fields=["category"])
+            else:
                 llm_hits += 1
                 self.stdout.write(
-                    f"  [LLM] {desc[:60]:<60} → {cat_name} (kw={keyword!r}, conf={confidence})"
+                    f"  [ZS]  {desc[:60]:<60} → {cat_name} ({confidence}, clue={clue!r})"
                 )
 
-            else:
-                llm_skipped += 1
-                self.stdout.write(self.style.WARNING(
-                    f"  [???] {desc[:60]:<60} → unrecognized response: {result}"
-                ))
-
         self.stdout.write("\n" + "─" * 70)
-        self.stdout.write(self.style.SUCCESS(f"Keyword matches : {keyword_hits}"))
-        self.stdout.write(self.style.SUCCESS(f"LLM matches     : {llm_hits}"))
-        self.stdout.write(self.style.SUCCESS(f"New categories  : {llm_new}"))
-        self.stdout.write(self.style.WARNING(f"Skipped (low conf / unknown): {llm_skipped}"))
-        self.stdout.write(self.style.ERROR(f"Errors          : {errors}"))
+        self.stdout.write(self.style.SUCCESS(f"Keyword matches  : {keyword_hits}"))
+        self.stdout.write(self.style.SUCCESS(f"Zero-shot matches : {llm_hits}"))
+        self.stdout.write(self.style.SUCCESS(f"New categories   : {llm_new}"))
+        self.stdout.write(self.style.WARNING(f"Skipped (low score): {llm_skipped}"))
+        self.stdout.write(self.style.ERROR(f"Errors           : {errors}"))
         if dry:
             self.stdout.write(self.style.WARNING("\nDRY RUN — nothing was saved."))
