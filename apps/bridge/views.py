@@ -1,3 +1,6 @@
+import os
+import requests as http_requests
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -112,21 +115,34 @@ def auto_categorize(request):
 
 @login_required
 def auto_categorize_ai(request):
-    if request.method == 'POST':
-        service = CategorizationService()
-        try:
-            keyword_count, ai_count, total = service.auto_categorize_with_ai()
-            parts = []
-            if keyword_count:
-                parts.append(f'{keyword_count} via keywords')
-            if ai_count:
-                parts.append(f'{ai_count} via AI')
-            if parts:
-                messages.success(request, f'Categorized {keyword_count + ai_count} of {total} ({", ".join(parts)}).')
-            else:
-                messages.info(request, 'No transactions could be categorized.')
-        except Exception as e:
-            messages.error(request, f'AI categorization error: {e}')
+    if request.method != 'POST':
+        return redirect(reverse('bridge:bulk_operations'))
+
+    gh_token = os.environ.get('GH_TOKEN', '')
+    gh_repo = os.environ.get('GH_REPO', '')
+
+    if not gh_token or not gh_repo:
+        messages.error(request, 'GH_TOKEN or GH_REPO not configured on this server.')
+        return redirect(reverse('bridge:bulk_operations'))
+
+    try:
+        resp = http_requests.post(
+            f'https://api.github.com/repos/{gh_repo}/actions/workflows/AI%20Categorize.yml/dispatches',
+            headers={
+                'Authorization': f'Bearer {gh_token}',
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+            },
+            json={'ref': 'main'},
+            timeout=10,
+        )
+        if resp.status_code == 204:
+            messages.success(request, 'AI categorization job dispatched to GitHub Actions. Check back in ~2 minutes.')
+        else:
+            messages.error(request, f'GitHub API error {resp.status_code}: {resp.text[:300]}')
+    except Exception as e:
+        messages.error(request, f'Failed to dispatch job: {e}')
+
     return redirect(reverse('bridge:bulk_operations'))
 
 
@@ -234,8 +250,6 @@ def bulk_operations(request):
 
     erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
 
-    # Pre-compute is_junk per transaction in Python ? Django templates can't
-    # evaluate expressions like `trans.category and trans.category_id in junk_ids`
     raw_recent = BankTransaction.objects.order_by('-date')[:10]
     recent_transactions = [
         {
@@ -245,10 +259,20 @@ def bulk_operations(request):
         for t in raw_recent
     ]
 
+    raw_needs_cat = list(_needs_categorization_qs().order_by('-date'))
+    needs_categorizing = [
+        {
+            'obj': t,
+            'is_junk': bool(t.category_id and t.category_id in junk_ids_set),
+        }
+        for t in raw_needs_cat
+    ]
+
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
         'erpnext_config': erpnext_config,
         'recent_transactions': recent_transactions,
+        'needs_categorizing': needs_categorizing,
     })
 
 
