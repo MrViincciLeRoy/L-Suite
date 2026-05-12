@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.erpnext",
     "apps.gmail",
     "apps.main",
+    "apps.bank_parsers",
 ]
 
 MIDDLEWARE = [

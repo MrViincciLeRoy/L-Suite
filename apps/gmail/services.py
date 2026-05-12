@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from django.conf import settings
 
 from apps.main.models import EmailStatement, BankTransaction
-from .parsers import PDFParser
+from apps.bank_parsers.parsers import PDFParser
 
 logger = logging.getLogger(__name__)
 
