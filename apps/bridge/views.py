@@ -127,7 +127,7 @@ def auto_categorize_ai(request):
 
     try:
         resp = http_requests.post(
-            f'https://api.github.com/repos/{gh_repo}/actions/workflows/AI%20Categorize.yml/dispatches',
+            f'https://api.github.com/repos/{gh_repo}/actions/workflows/ai_categorize.yml/dispatches',
             headers={
                 'Authorization': f'Bearer {gh_token}',
                 'Accept': 'application/vnd.github+json',
