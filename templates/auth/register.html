@@ -1,26 +1,450 @@
 {% extends "base.html" %}
-{% block title %}Register - LSuite{% endblock %}
+{% block title %}Create Account - LSuite{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center mt-5">
-    <div class="col-md-6 col-lg-5">
-        <div class="card shadow">
-            <div class="card-body p-5">
-                <h3 class="text-center mb-4">Create Account</h3>
-                <form method="POST" action="{% url 'authusers:register' %}">
-                    {% csrf_token %}
-                    {{ form.as_p }}
-                    <div class="d-grid mt-3">
-                        <button type="submit" class="btn btn-primary btn-lg">Register</button>
-                    </div>
-                </form>
-                <hr class="my-4">
-                <p class="text-center text-muted">
-                    Already have an account?
-                    <a href="{% url 'authusers:login' %}">Login here</a>
-                </p>
+<style>
+  .reg-wrap   { max-width: 560px; margin: 2.5rem auto 4rem; padding: 0 1rem; }
+  .prog-bar   { height: 4px; background: #e9ecef; border-radius: 2px; margin-bottom: 1.5rem; }
+  .prog-fill  { height: 100%; background: linear-gradient(90deg,#0d6efd,#6610f2); border-radius: 2px; transition: width .35s ease; }
+  .prog-label { display: flex; justify-content: space-between; font-size: .72rem; color: #6c757d; margin-bottom: .4rem; }
+
+  .reg-card          { display: none; }
+  .reg-card.active   { display: block; }
+
+  .card-step  { font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: #6c757d; margin-bottom: .25rem; }
+  .card-title { font-size: 1.15rem; font-weight: 600; margin-bottom: .2rem; }
+  .card-sub   { font-size: .82rem; color: #6c757d; margin-bottom: 1.4rem; }
+
+  .field-label { font-size: .78rem; font-weight: 500; margin-bottom: .3rem; }
+  .opt-badge   { font-size: .62rem; font-weight: 400; color: #adb5bd; margin-left: .35rem; }
+
+  .btn-row    { display: flex; gap: .65rem; margin-top: 1.4rem; align-items: center; flex-wrap: wrap; }
+  .btn-skip   { margin-left: auto; font-size: .75rem; color: #6c757d; background: none; border: none; cursor: pointer; }
+  .btn-skip:hover { color: #343a40; }
+
+  .err-text   { font-size: .75rem; color: #dc3545; margin-top: .25rem; }
+  .field-err .form-control { border-color: #dc3545; }
+
+  .summary-box { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: .375rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+  .summary-row { display: flex; justify-content: space-between; font-size: .82rem; padding: .2rem 0; }
+  .summary-row .label { color: #6c757d; }
+  .summary-row .value { font-weight: 500; max-width: 60%; text-align: right; overflow-wrap: anywhere; }
+
+  .edit-link  { font-size: .7rem; color: #0d6efd; text-decoration: none; cursor: pointer; }
+  .edit-link:hover { text-decoration: underline; }
+</style>
+
+<div class="reg-wrap">
+  <div class="text-center mb-4">
+    <h2 class="h4 mb-0"><i class="fas fa-file-invoice-dollar text-primary"></i> LSuite</h2>
+    <p class="text-muted small mt-1">Create your account</p>
+  </div>
+
+  <!-- Progress -->
+  <div class="prog-label" id="prog-label">
+    <span id="prog-text">Step 1 of 6</span>
+    <span id="prog-pct">0%</span>
+  </div>
+  <div class="prog-bar"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+
+  <form method="POST" id="reg-form" action="{% url 'authusers:register' %}" novalidate>
+    {% csrf_token %}
+
+    <!-- hidden fields populated by JS on final submit -->
+    <input type="hidden" name="first_name"       id="h-first_name">
+    <input type="hidden" name="last_name"        id="h-last_name">
+    <input type="hidden" name="email"            id="h-email">
+    <input type="hidden" name="username"         id="h-username">
+    <input type="hidden" name="password1"        id="h-password1">
+    <input type="hidden" name="password2"        id="h-password2">
+    <input type="hidden" name="phone"            id="h-phone">
+    <input type="hidden" name="date_of_birth"    id="h-date_of_birth">
+    <input type="hidden" name="id_number"        id="h-id_number">
+    <input type="hidden" name="city"             id="h-city">
+    <input type="hidden" name="province"         id="h-province">
+    <input type="hidden" name="country"          id="h-country">
+    <input type="hidden" name="occupation"       id="h-occupation">
+    <input type="hidden" name="years_experience" id="h-years_experience">
+    <input type="hidden" name="industry"         id="h-industry">
+    <input type="hidden" name="linkedin_url"     id="h-linkedin_url">
+    <input type="hidden" name="github_url"       id="h-github_url">
+    <input type="hidden" name="portfolio_url"    id="h-portfolio_url">
+
+    {# ═══ CARD 1 — Identity (required) ═══════════════════════════════════ #}
+    <div class="reg-card active card shadow-sm" id="card-0">
+      <div class="card-body p-4">
+        <div class="card-step">Step 1 of 6 · Identity</div>
+        <div class="card-title">Who are you? 👋</div>
+        <div class="card-sub">Your real name and email. Email is used for password resets.</div>
+
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="form-group {% if errors.first_name %}field-err{% endif %}">
+              <label class="field-label">First Name <span class="text-danger">*</span></label>
+              <input class="form-control" id="f-first_name" type="text" placeholder="Jane"
+                     value="{{ post.first_name|default:'' }}" autocomplete="given-name">
+              {% if errors.first_name %}<div class="err-text">{{ errors.first_name }}</div>{% endif %}
             </div>
+          </div>
+          <div class="col-6">
+            <div class="form-group {% if errors.last_name %}field-err{% endif %}">
+              <label class="field-label">Last Name <span class="text-danger">*</span></label>
+              <input class="form-control" id="f-last_name" type="text" placeholder="Dlamini"
+                     value="{{ post.last_name|default:'' }}" autocomplete="family-name">
+              {% if errors.last_name %}<div class="err-text">{{ errors.last_name }}</div>{% endif %}
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="form-group {% if errors.email %}field-err{% endif %}">
+              <label class="field-label">Email Address <span class="text-danger">*</span></label>
+              <input class="form-control" id="f-email" type="email" placeholder="jane@example.com"
+                     value="{{ post.email|default:'' }}" autocomplete="email">
+              <div class="form-text">Used for password resets — required.</div>
+              {% if errors.email %}<div class="err-text">{{ errors.email }}</div>{% endif %}
+            </div>
+          </div>
         </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" onclick="nextCard(0)">Next →</button>
+        </div>
+      </div>
     </div>
+
+    {# ═══ CARD 2 — Account credentials (required) ════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-1">
+      <div class="card-body p-4">
+        <div class="card-step">Step 2 of 6 · Credentials</div>
+        <div class="card-title">Your account details 🔐</div>
+        <div class="card-sub">Choose a username and a strong password.</div>
+
+        <div class="mb-3">
+          <div class="form-group {% if errors.username %}field-err{% endif %}">
+            <label class="field-label">Username <span class="text-danger">*</span></label>
+            <input class="form-control" id="f-username" type="text" placeholder="jane_dlamini"
+                   value="{{ post.username|default:'' }}" autocomplete="username">
+            {% if errors.username %}<div class="err-text">{{ errors.username }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="mb-3">
+          <div class="form-group {% if errors.password1 %}field-err{% endif %}">
+            <label class="field-label">Password <span class="text-danger">*</span></label>
+            <input class="form-control" id="f-password1" type="password" placeholder="Min 8 characters"
+                   autocomplete="new-password">
+            {% if errors.password1 %}<div class="err-text">{{ errors.password1 }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="mb-1">
+          <div class="form-group {% if errors.password2 %}field-err{% endif %}">
+            <label class="field-label">Confirm Password <span class="text-danger">*</span></label>
+            <input class="form-control" id="f-password2" type="password" placeholder="Repeat password"
+                   autocomplete="new-password">
+            {% if errors.password2 %}<div class="err-text">{{ errors.password2 }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline-secondary" onclick="prevCard(1)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="nextCard(1)">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    {# ═══ CARD 3 — Personal details (optional) ══════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-2">
+      <div class="card-body p-4">
+        <div class="card-step">Step 3 of 6 · Personal</div>
+        <div class="card-title">Personal details <span class="opt-badge">optional</span></div>
+        <div class="card-sub">Helps us personalise your experience. All optional.</div>
+
+        <div class="row g-3">
+          <div class="col-12 col-sm-6">
+            <label class="field-label">Phone <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-phone" type="tel" placeholder="+27 82 000 0000"
+                   value="{{ post.phone|default:'' }}">
+          </div>
+          <div class="col-12 col-sm-6">
+            <label class="field-label">Date of Birth <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-date_of_birth" type="date"
+                   value="{{ post.date_of_birth|default:'' }}">
+          </div>
+          <div class="col-12">
+            <label class="field-label">SA ID Number <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-id_number" type="text" placeholder="13-digit ID number"
+                   value="{{ post.id_number|default:'' }}" maxlength="20">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline-secondary" onclick="prevCard(2)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="nextCard(2)">Next →</button>
+          <button type="button" class="btn-skip" onclick="skipTo(3)">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    {# ═══ CARD 4 — Location (optional) ══════════════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-3">
+      <div class="card-body p-4">
+        <div class="card-step">Step 4 of 6 · Location</div>
+        <div class="card-title">Where are you based? 📍 <span class="opt-badge">optional</span></div>
+        <div class="card-sub">Helps match you to relevant regional features.</div>
+
+        <div class="row g-3">
+          <div class="col-12 col-sm-6">
+            <label class="field-label">City <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-city" type="text" placeholder="Johannesburg"
+                   value="{{ post.city|default:'' }}">
+          </div>
+          <div class="col-12 col-sm-6">
+            <label class="field-label">Province / State <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-province" type="text" placeholder="Gauteng"
+                   value="{{ post.province|default:'' }}">
+          </div>
+          <div class="col-12">
+            <label class="field-label">Country <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-country" type="text" placeholder="South Africa"
+                   value="{{ post.country|default:'' }}">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline-secondary" onclick="prevCard(3)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="nextCard(3)">Next →</button>
+          <button type="button" class="btn-skip" onclick="skipTo(4)">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    {# ═══ CARD 5 — Professional (optional) ══════════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-4">
+      <div class="card-body p-4">
+        <div class="card-step">Step 5 of 6 · Professional</div>
+        <div class="card-title">Your work background 💼 <span class="opt-badge">optional</span></div>
+        <div class="card-sub">Tell us a little about your professional life.</div>
+
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="field-label">Job Title / Occupation <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-occupation" type="text" placeholder="e.g. Accountant, Software Developer"
+                   value="{{ post.occupation|default:'' }}">
+          </div>
+          <div class="col-12 col-sm-6">
+            <label class="field-label">Years of Experience <span class="opt-badge">optional</span></label>
+            <select class="form-select" id="f-years_experience">
+              <option value="">Select...</option>
+              <option value="0-1"  {% if post.years_experience == "0-1"  %}selected{% endif %}>Less than 1 year</option>
+              <option value="1-2"  {% if post.years_experience == "1-2"  %}selected{% endif %}>1–2 years</option>
+              <option value="3-5"  {% if post.years_experience == "3-5"  %}selected{% endif %}>3–5 years</option>
+              <option value="5-10" {% if post.years_experience == "5-10" %}selected{% endif %}>5–10 years</option>
+              <option value="10+"  {% if post.years_experience == "10+"  %}selected{% endif %}>10+ years</option>
+            </select>
+          </div>
+          <div class="col-12 col-sm-6">
+            <label class="field-label">Industry / Field <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-industry" type="text" placeholder="e.g. Finance, IT, Health"
+                   value="{{ post.industry|default:'' }}">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline-secondary" onclick="prevCard(4)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="nextCard(4)">Next →</button>
+          <button type="button" class="btn-skip" onclick="skipTo(5)">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    {# ═══ CARD 6 — Online presence (optional) ════════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-5">
+      <div class="card-body p-4">
+        <div class="card-step">Step 6 of 6 · Online Presence</div>
+        <div class="card-title">Your online profiles 🌐 <span class="opt-badge">optional</span></div>
+        <div class="card-sub">Add any links that are relevant to your work.</div>
+
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="field-label">LinkedIn URL <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-linkedin_url" type="url" placeholder="https://linkedin.com/in/..."
+                   value="{{ post.linkedin_url|default:'' }}">
+          </div>
+          <div class="col-12">
+            <label class="field-label">GitHub URL <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-github_url" type="url" placeholder="https://github.com/..."
+                   value="{{ post.github_url|default:'' }}">
+          </div>
+          <div class="col-12">
+            <label class="field-label">Portfolio / Website <span class="opt-badge">optional</span></label>
+            <input class="form-control" id="f-portfolio_url" type="url" placeholder="https://..."
+                   value="{{ post.portfolio_url|default:'' }}">
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button type="button" class="btn btn-outline-secondary" onclick="prevCard(5)">← Back</button>
+          <button type="button" class="btn btn-primary" onclick="goReview()">Review & Create Account →</button>
+          <button type="button" class="btn-skip" onclick="goReview()">Skip & finish</button>
+        </div>
+      </div>
+    </div>
+
+    {# ═══ CARD 7 — Review & submit ════════════════════════════════════════ #}
+    <div class="reg-card card shadow-sm" id="card-6">
+      <div class="card-body p-4">
+        <div class="card-step">Almost done · Review</div>
+        <div class="card-title">Review your details ✅</div>
+        <div class="card-sub">Check everything looks right before creating your account.</div>
+
+        <div class="summary-box" id="summary"></div>
+
+        <div class="d-grid">
+          <button type="submit" class="btn btn-success btn-lg" onclick="populateHidden()">
+            Create My Account →
+          </button>
+        </div>
+        <div class="text-center mt-2">
+          <button type="button" class="btn-skip" onclick="goTo(0)">← Start over</button>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+  <hr class="my-4">
+  <p class="text-center text-muted small">
+    Already have an account? <a href="{% url 'authusers:login' %}">Log in here</a>
+  </p>
 </div>
+
+<script>
+let current = 0;
+const TOTAL = 7; // cards 0-6
+
+const fields = {
+  'first_name':       { label: 'First Name',       card: 0 },
+  'last_name':        { label: 'Last Name',         card: 0 },
+  'email':            { label: 'Email',             card: 0 },
+  'username':         { label: 'Username',          card: 1 },
+  'phone':            { label: 'Phone',             card: 2 },
+  'date_of_birth':    { label: 'Date of Birth',     card: 2 },
+  'id_number':        { label: 'SA ID Number',      card: 2 },
+  'city':             { label: 'City',              card: 3 },
+  'province':         { label: 'Province',          card: 3 },
+  'country':          { label: 'Country',           card: 3 },
+  'occupation':       { label: 'Occupation',        card: 4 },
+  'years_experience': { label: 'Experience',        card: 4 },
+  'industry':         { label: 'Industry',          card: 4 },
+  'linkedin_url':     { label: 'LinkedIn',          card: 5 },
+  'github_url':       { label: 'GitHub',            card: 5 },
+  'portfolio_url':    { label: 'Portfolio',         card: 5 },
+};
+
+function v(id) { return (document.getElementById('f-' + id)?.value || '').trim(); }
+
+function showCard(n) {
+  document.querySelectorAll('.reg-card').forEach(c => c.classList.remove('active'));
+  document.getElementById('card-' + n).classList.add('active');
+  current = n;
+  updateProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updateProgress() {
+  const pct  = Math.round((current / (TOTAL - 1)) * 100);
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-pct').textContent  = pct + '%';
+  document.getElementById('prog-text').textContent =
+    current < TOTAL - 1 ? `Step ${current + 1} of 6` : 'Review';
+}
+
+function validateCard(n) {
+  clearErrors(n);
+  const errs = [];
+
+  if (n === 0) {
+    if (!v('first_name')) errs.push({ id: 'first_name', msg: 'First name is required.' });
+    if (!v('last_name'))  errs.push({ id: 'last_name',  msg: 'Last name is required.' });
+    const em = v('email');
+    if (!em)                                   errs.push({ id: 'email', msg: 'Email is required.' });
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) errs.push({ id: 'email', msg: 'Enter a valid email.' });
+  }
+
+  if (n === 1) {
+    if (!v('username'))   errs.push({ id: 'username',  msg: 'Username is required.' });
+    const p1 = document.getElementById('f-password1').value;
+    const p2 = document.getElementById('f-password2').value;
+    if (!p1)              errs.push({ id: 'password1', msg: 'Password is required.' });
+    else if (p1.length < 8) errs.push({ id: 'password1', msg: 'At least 8 characters.' });
+    if (p1 && p1 !== p2)  errs.push({ id: 'password2', msg: 'Passwords do not match.' });
+  }
+
+  errs.forEach(e => {
+    const wrap = document.getElementById('f-' + e.id)?.closest('.form-group, div');
+    wrap?.classList.add('field-err');
+    let d = document.createElement('div');
+    d.className = 'err-text'; d.textContent = e.msg;
+    document.getElementById('f-' + e.id)?.after(d);
+  });
+
+  return errs.length === 0;
+}
+
+function clearErrors(n) {
+  const card = document.getElementById('card-' + n);
+  card.querySelectorAll('.err-text').forEach(e => e.remove());
+  card.querySelectorAll('.field-err').forEach(e => e.classList.remove('field-err'));
+}
+
+function nextCard(n) {
+  if (!validateCard(n)) return;
+  showCard(n + 1);
+}
+
+function prevCard(n) { showCard(n - 1); }
+
+function skipTo(n) { showCard(n); }
+
+function goReview() {
+  buildSummary();
+  showCard(6);
+}
+
+function goTo(n) { showCard(n); }
+
+function buildSummary() {
+  const rows = [];
+  Object.entries(fields).forEach(([key, meta]) => {
+    const val = v(key);
+    if (val) rows.push(`<div class="summary-row">
+      <span class="label">${meta.label}</span>
+      <span class="value">${val}</span>
+    </div>`);
+  });
+  document.getElementById('summary').innerHTML = rows.length
+    ? rows.join('')
+    : '<p class="text-muted small mb-0">Only required fields filled.</p>';
+}
+
+function populateHidden() {
+  Object.keys(fields).forEach(key => {
+    const el = document.getElementById('h-' + key);
+    if (el) el.value = v(key);
+  });
+  // passwords are not in `fields` (security) — copy directly
+  document.getElementById('h-password1').value = document.getElementById('f-password1').value;
+  document.getElementById('h-password2').value = document.getElementById('f-password2').value;
+}
+
+// If server returned errors, jump back to the first failing card
+{% if errors %}
+(function () {
+  const errKeys = {{ errors.keys|list|safe }};
+  if (!errKeys.length) return;
+  const cardNums = errKeys.map(k => (fields[k] || {}).card || 0);
+  showCard(Math.min(...cardNums));
+})();
+{% endif %}
+
+updateProgress();
+</script>
 {% endblock %}

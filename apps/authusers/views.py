@@ -1,8 +1,5 @@
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
-from django.contrib.auth.forms import (
-    UserCreationForm, AuthenticationForm, PasswordChangeForm,
-    PasswordResetForm, SetPasswordForm,
-)
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm, SetPasswordForm
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -16,22 +13,88 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 
-from .models import SocialLink, PLATFORM_SUGGESTIONS
+from .models import SocialLink, UserProfile, PLATFORM_SUGGESTIONS
 
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _get_or_create_profile(user):
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    return profile
+
+
+# ── Register ──────────────────────────────────────────────────────────────────
 
 def register_view(request):
+    errors = {}
+
     if request.method == 'POST':
-        form = UserCreationForm(request.POST)
-        if form.is_valid():
-            user = form.save()
+        # ── Required fields ──
+        first_name = request.POST.get('first_name', '').strip()
+        last_name  = request.POST.get('last_name', '').strip()
+        email      = request.POST.get('email', '').strip().lower()
+        username   = request.POST.get('username', '').strip()
+        password1  = request.POST.get('password1', '')
+        password2  = request.POST.get('password2', '')
+
+        if not first_name:
+            errors['first_name'] = 'First name is required.'
+        if not last_name:
+            errors['last_name'] = 'Last name is required.'
+        if not email:
+            errors['email'] = 'Email is required.'
+        elif User.objects.filter(email__iexact=email).exists():
+            errors['email'] = 'An account with this email already exists.'
+        if not username:
+            errors['username'] = 'Username is required.'
+        elif User.objects.filter(username__iexact=username).exists():
+            errors['username'] = 'That username is already taken.'
+        if not password1:
+            errors['password1'] = 'Password is required.'
+        elif len(password1) < 8:
+            errors['password1'] = 'Password must be at least 8 characters.'
+        if password1 != password2:
+            errors['password2'] = 'Passwords do not match.'
+
+        if not errors:
+            user = User.objects.create_user(
+                username   = username,
+                email      = email,
+                password   = password1,
+                first_name = first_name,
+                last_name  = last_name,
+            )
+
+            # ── Optional fields saved to profile ──
+            profile = _get_or_create_profile(user)
+            profile.phone            = request.POST.get('phone', '').strip()
+            profile.id_number        = request.POST.get('id_number', '').strip()
+            profile.city             = request.POST.get('city', '').strip()
+            profile.province         = request.POST.get('province', '').strip()
+            profile.country          = request.POST.get('country', '').strip()
+            profile.occupation       = request.POST.get('occupation', '').strip()
+            profile.years_experience = request.POST.get('years_experience', '').strip()
+            profile.industry         = request.POST.get('industry', '').strip()
+            profile.linkedin_url     = request.POST.get('linkedin_url', '').strip()
+            profile.github_url       = request.POST.get('github_url', '').strip()
+            profile.portfolio_url    = request.POST.get('portfolio_url', '').strip()
+
+            dob = request.POST.get('date_of_birth', '').strip()
+            if dob:
+                try:
+                    from datetime import date
+                    profile.date_of_birth = date.fromisoformat(dob)
+                except ValueError:
+                    pass
+
+            profile.save()
             login(request, user)
             return redirect('main:index')
-    else:
-        form = UserCreationForm()
-    return render(request, 'auth/register.html', {'form': form})
 
+    return render(request, 'auth/register.html', {'errors': errors, 'post': request.POST})
+
+
+# ── Login / Logout ────────────────────────────────────────────────────────────
 
 def login_view(request):
     if request.method == 'POST':
@@ -61,7 +124,7 @@ def profile(request):
     })
 
 
-# ── Password Change (while logged in) ────────────────────────────────────────
+# ── Password Change (logged-in) ───────────────────────────────────────────────
 
 @login_required
 def change_password(request):
@@ -79,26 +142,20 @@ def change_password(request):
     return render(request, 'auth/change_password.html', {'form': form})
 
 
-# ── Password Reset (logged out flow) ─────────────────────────────────────────
+# ── Password Reset (logged-out email flow) ────────────────────────────────────
 
 def password_reset_request(request):
     if request.method == 'POST':
         email = request.POST.get('email', '').strip()
-        users = User.objects.filter(email__iexact=email)
-        if users.exists():
-            for user in users:
-                uid   = urlsafe_base64_encode(force_bytes(user.pk))
-                token = default_token_generator.make_token(user)
-                reset_url = request.build_absolute_uri(
-                    f"/authusers/reset/{uid}/{token}/"
-                )
-                subject = "LSuite — Password Reset"
-                body = render_to_string('auth/email/password_reset.txt', {
-                    'user': user,
-                    'reset_url': reset_url,
-                })
-                send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [user.email])
-        # Always show done page (don't leak whether email exists)
+        for user in User.objects.filter(email__iexact=email):
+            uid       = urlsafe_base64_encode(force_bytes(user.pk))
+            token     = default_token_generator.make_token(user)
+            reset_url = request.build_absolute_uri(f"/authusers/reset/{uid}/{token}/")
+            body = render_to_string('auth/email/password_reset.txt', {
+                'user': user, 'reset_url': reset_url,
+            })
+            send_mail('LSuite — Password Reset', body,
+                      settings.DEFAULT_FROM_EMAIL, [user.email])
         return redirect('authusers:password_reset_done')
     return render(request, 'auth/password_reset.html')
 
@@ -120,15 +177,11 @@ def password_reset_confirm(request, uidb64, token):
         form = SetPasswordForm(user, request.POST)
         if form.is_valid():
             form.save()
-            messages.success(request, 'Password reset successfully. You can now log in.')
             return redirect('authusers:password_reset_complete')
     else:
         form = SetPasswordForm(user) if valid else None
 
-    return render(request, 'auth/password_reset_confirm.html', {
-        'form':  form,
-        'valid': valid,
-    })
+    return render(request, 'auth/password_reset_confirm.html', {'form': form, 'valid': valid})
 
 
 def password_reset_complete(request):
@@ -157,13 +210,8 @@ def social_link_save(request, pk=None):
     else:
         link = SocialLink.objects.create(user=request.user, platform=platform, url=url)
 
-    return JsonResponse({
-        'ok':       True,
-        'id':       link.pk,
-        'platform': link.platform,
-        'url':      link.url,
-        'icon':     link.get_icon(),
-    })
+    return JsonResponse({'ok': True, 'id': link.pk, 'platform': link.platform,
+                         'url': link.url, 'icon': link.get_icon()})
 
 
 @login_required
