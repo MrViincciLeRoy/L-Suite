@@ -84,7 +84,13 @@ def register_view(request):
                     pass
 
             profile.save()
-            login(request, user)
+
+            # FIX: With multiple AUTHENTICATION_BACKENDS configured (social_django
+            # + ModelBackend), Django can't infer which backend authenticated this
+            # user. Specify ModelBackend explicitly so login() doesn't raise.
+            login(request, user,
+                  backend='django.contrib.auth.backends.ModelBackend')
+
             return redirect('main:index')
 
     return render(request, 'auth/register.html', {
