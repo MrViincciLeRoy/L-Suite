@@ -59,19 +59,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "LSuite.wsgi.application"
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# ?? Database ??????????????????????????????????????????????????????????????????
+# Accepts a valid DATABASE_URL (mysql://, postgres://, sqlite://).
+# Falls back to SQLite if the var is missing, empty, or unparseable.
 
-if DATABASE_URL:
-    db_config = dj_database_url.parse(DATABASE_URL)
-    db_config['OPTIONS'] = {'ssl': {'ssl_disabled': False}}
-    DATABASES = {'default': db_config}
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
+_DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+
+_SQLITE_FALLBACK = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
+}
+
+if _DATABASE_URL and '://' in _DATABASE_URL and not _DATABASE_URL.startswith('://'):
+    try:
+        _db_config = dj_database_url.parse(_DATABASE_URL, conn_max_age=600)
+        if _db_config.get('ENGINE', '').endswith('mysql'):
+            _db_config.setdefault('OPTIONS', {})['ssl'] = {'ssl_disabled': False}
+        DATABASES = {'default': _db_config}
+    except Exception:
+        DATABASES = _SQLITE_FALLBACK
+else:
+    DATABASES = _SQLITE_FALLBACK
+
+# ?????????????????????????????????????????????????????????????????????????????
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -94,3 +106,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = '/authusers/login/'
 
 GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', '')
+
+EMAIL_BACKEND     = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST        = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT        = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_USE_TLS     = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
+EMAIL_HOST_USER   = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'LSuite <noreply@example.com>')
