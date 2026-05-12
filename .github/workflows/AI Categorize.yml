@@ -1,0 +1,33 @@
+name: AI Categorize
+
+on:
+  workflow_dispatch:
+
+jobs:
+  categorize:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI categorization
+        run: |
+          python manage.py shell << 'EOF'
+          from apps.bridge.services import CategorizationService
+          service = CategorizationService()
+          keyword_count, ai_count, total = service.auto_categorize_with_ai()
+          print(f"Done: {keyword_count} keyword, {ai_count} AI, {total} total processed")
+          EOF
