@@ -27,7 +27,7 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       HUGGINGFACE_API_KEY: ${{ secrets.HF_TOKEN }}
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      DJANGO_SETTINGS_MODULE: core.settings
+      DJANGO_SETTINGS_MODULE: LSuite.settings
 
     steps:
       - name: Checkout
