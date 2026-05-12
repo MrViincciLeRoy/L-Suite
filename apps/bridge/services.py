@@ -34,7 +34,7 @@ JUNK_CATEGORY_NAMES = {
     'uncategorized',
     # Generic catch-alls
     'other',
-    'other income',
+    #'other income',
     'other expense',
     'other expenses',
     # Observed junk from FNB statement parsing
@@ -44,10 +44,10 @@ JUNK_CATEGORY_NAMES = {
     'sweep transfer',
     'deposit investments',
     'applied transfer',
-    'fnb cellphone',
+    #'fnb cellphone',
     'digital payments',
     '4th transfer',
-    'received interest',
+    #'received interest',
     # Transfer — too generic to be useful for ERPNext sync
     'transfer',
 }
