@@ -199,6 +199,9 @@ def password_reset_request(request):
     if request.method == 'POST':
         email = request.POST.get('email', '').strip()
         for user in User.objects.filter(email__iexact=email):
+            
+            print(f"[PASSWORD RESET] Sending to: {user.username} <{user.email}>")
+            
             uid       = urlsafe_base64_encode(force_bytes(user.pk))
             token     = default_token_generator.make_token(user)
             reset_url = request.build_absolute_uri(f"/authusers/reset/{uid}/{token}/")
