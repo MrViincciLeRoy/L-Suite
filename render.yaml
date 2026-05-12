@@ -10,6 +10,10 @@ services:
         generateValue: true
       - key: DEBUG
         value: "True"
+      - key: GH_TOKEN
+        value: "ghp_EXAMPLEOFGHFULLTOKENHERE"
+      - key: GH_REPO
+        value: "MrViincciLeRoy/LSuite"
       - key: DATABASE_URL
         value: "mysql"
       - key: DB_PASSWORD
