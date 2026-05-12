@@ -7,16 +7,15 @@ on:
         description: 'User ID to categorize (leave empty for all users)'
         required: false
         default: ''
-      min_confidence:
-        description: 'Minimum LLM confidence threshold (default 50)'
+      min_score:
+        description: 'Minimum zero-shot score 0.0-1.0 (default 0.5)'
         required: false
-        default: '50'
+        default: '0.5'
       dry_run:
         description: 'Dry run? (true/false)'
         required: false
         default: 'false'
   schedule:
-    # runs every night at 2am UTC
     - cron: '0 2 * * *'
 
 jobs:
@@ -25,9 +24,9 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      HUGGINGFACE_API_KEY: ${{ secrets.HF_TOKEN }}
+      HUGGINGFACE_API_KEY: ${{ SECRETS.HF_TOKEN }}
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      DJANGO_SETTINGS_MODULE: LSuite.settings
+      DJANGO_SETTINGS_MODULE: core.settings
 
     steps:
       - name: Checkout
@@ -54,8 +53,8 @@ jobs:
             ARGS="$ARGS --user ${{ github.event.inputs.user_id }}"
           fi
 
-          if [ -n "${{ github.event.inputs.min_confidence }}" ]; then
-            ARGS="$ARGS --min-confidence ${{ github.event.inputs.min_confidence }}"
+          if [ -n "${{ github.event.inputs.min_score }}" ]; then
+            ARGS="$ARGS --min-score ${{ github.event.inputs.min_score }}"
           fi
 
           python manage.py auto_categorize $ARGS
