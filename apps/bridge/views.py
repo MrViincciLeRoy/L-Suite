@@ -29,8 +29,15 @@ def categories(request):
         })
         for c in cats
     ]
+
+    # Pass ERPNext config status so the template can show connection state
+    active_config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
+    any_config = active_config or ERPNextConfig.objects.filter(user=request.user).order_by('-created_at').first()
+
     return render(request, 'bridge/categories.html', {
         'categories_with_stats': categories_with_stats,
+        'erpnext_config': active_config,
+        'any_erpnext_config': any_config,
     })
 
 
@@ -248,9 +255,8 @@ def bulk_operations(request):
         ).count(),
     }
 
-    # Prefer active config, fall back to any config so the UI shows it exists
-    active_config = ERPNextConfig.objects.filter(is_active=True).first()
-    any_config = active_config or ERPNextConfig.objects.order_by('-created_at').first()
+    active_config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
+    any_config = active_config or ERPNextConfig.objects.filter(user=request.user).order_by('-created_at').first()
 
     raw_recent = BankTransaction.objects.order_by('-date')[:10]
     recent_transactions = [
@@ -272,8 +278,8 @@ def bulk_operations(request):
 
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
-        'erpnext_config': active_config,       # None if inactive ? shows "Not Active" state
-        'any_erpnext_config': any_config,       # the config object regardless of active state
+        'erpnext_config': active_config,
+        'any_erpnext_config': any_config,
         'recent_transactions': recent_transactions,
         'needs_categorizing': needs_categorizing,
     })
@@ -282,10 +288,9 @@ def bulk_operations(request):
 @login_required
 def bulk_sync(request):
     if request.method == 'POST':
-        # Use active config first; if none, try activating the only available one automatically
-        config = ERPNextConfig.objects.filter(is_active=True).first()
+        config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
         if not config:
-            config = ERPNextConfig.objects.order_by('-created_at').first()
+            config = ERPNextConfig.objects.filter(user=request.user).order_by('-created_at').first()
             if config:
                 config.is_active = True
                 config.save(update_fields=['is_active'])
