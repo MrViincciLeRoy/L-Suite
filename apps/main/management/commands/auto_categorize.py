@@ -2,12 +2,21 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Q
 
 from apps.main.models import BankTransaction, TransactionCategory
 
 logger = logging.getLogger(__name__)
 
 HF_MODEL_ID = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+
+JUNK_NAMES = {
+    'uncategorised', 'uncategorized', 'other', 'other income',
+    'other expense', 'other expenses', 'fee fees', 'terminal) fees',
+    '***0) fees', 'sweep transfer', 'deposit investments',
+    'applied transfer', 'fnb cellphone', 'digital payments',
+    '4th transfer', 'received interest',
+}
 
 CLUE_MAP = {
     "supermarket": "Groceries",
@@ -90,12 +99,31 @@ CLUE_MAP = {
 }
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-def _txn_type(txn: BankTransaction) -> str:
+def _get_junk_ids():
+    return [
+        pk for pk, name in TransactionCategory.objects.values_list('id', 'name')
+        if name.strip().lower() in JUNK_NAMES
+    ]
+
+
+def _needs_categorizing_qs(user_id=None, include_all=False):
+    junk_ids = _get_junk_ids()
+    if include_all:
+        qs = BankTransaction.objects.all()
+    else:
+        qs = BankTransaction.objects.filter(
+            Q(category__isnull=True) | Q(category_id__in=junk_ids)
+        )
+    if user_id:
+        qs = qs.filter(user_id=user_id)
+    return qs
+
+
+def _txn_type(txn):
     return "credit" if (txn.deposit and txn.deposit > 0) else "debit"
 
 
-def _keyword_match(txn: BankTransaction, categories) -> TransactionCategory | None:
+def _keyword_match(txn, categories):
     t = _txn_type(txn)
     for cat in categories:
         if cat.transaction_type != t:
@@ -105,15 +133,14 @@ def _keyword_match(txn: BankTransaction, categories) -> TransactionCategory | No
     return None
 
 
-def _zero_shot_classify(description: str, cat_names: list, hf_token: str) -> dict:
+def _zero_shot_classify(description, cat_names, hf_token):
     from huggingface_hub import InferenceClient
 
     client = InferenceClient(token=hf_token)
     desc_lower = description.lower()
 
-    # find clue boost
-    found_clue = None
     score_boost = {}
+    found_clue = None
     for clue, cat_name in CLUE_MAP.items():
         if clue in desc_lower and cat_name in cat_names:
             score_boost[cat_name] = score_boost.get(cat_name, 0) + 0.5
@@ -127,7 +154,6 @@ def _zero_shot_classify(description: str, cat_names: list, hf_token: str) -> dic
     )
 
     score_dict = {r["label"]: r["score"] for r in results}
-
     for cat_name, boost in score_boost.items():
         if cat_name in score_dict:
             score_dict[cat_name] += boost
@@ -144,7 +170,7 @@ def _zero_shot_classify(description: str, cat_names: list, hf_token: str) -> dic
     }
 
 
-def _get_or_create_category(name: str, txn_type: str) -> TransactionCategory:
+def _get_or_create_category(name, txn_type):
     cat, _ = TransactionCategory.objects.get_or_create(
         name=name,
         defaults={"transaction_type": txn_type, "keywords": "", "tags": "", "active": True},
@@ -152,7 +178,7 @@ def _get_or_create_category(name: str, txn_type: str) -> TransactionCategory:
     return cat
 
 
-def _append_keyword(cat: TransactionCategory, keyword: str):
+def _append_keyword(cat, keyword):
     if not keyword:
         return
     keyword = keyword.strip().lower()
@@ -163,27 +189,27 @@ def _append_keyword(cat: TransactionCategory, keyword: str):
         cat.save(update_fields=["keywords"])
 
 
-# ── callable from pdf_upload.py ───────────────────────────────────────────────
-def run_auto_categorize(user_id: int = None, min_score: float = 0.5):
+def run_auto_categorize(user_id=None, min_score=0.5):
     from django.conf import settings
     hf_token = settings.HUGGINGFACE_API_KEY
 
-    qs = BankTransaction.objects.filter(category__isnull=True)
-    if user_id:
-        qs = qs.filter(user_id=user_id)
+    qs = _needs_categorizing_qs(user_id=user_id)
 
     for txn in qs.iterator():
         desc = txn.description.strip()
         t = _txn_type(txn)
-        categories = list(TransactionCategory.objects.filter(active=True))
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_NAMES
+        ]
 
-        matched = _keyword_match(txn, categories)
+        matched = _keyword_match(txn, good_categories)
         if matched:
             txn.category = matched
             txn.save(update_fields=["category"])
             continue
 
-        cat_names = [c.name for c in categories]
+        cat_names = [c.name for c in good_categories]
         try:
             result = _zero_shot_classify(desc, cat_names, hf_token)
         except Exception as e:
@@ -203,9 +229,8 @@ def run_auto_categorize(user_id: int = None, min_score: float = 0.5):
             txn.save(update_fields=["category"])
 
 
-# ── management command ────────────────────────────────────────────────────────
 class Command(BaseCommand):
-    help = "Auto-categorize: DB keyword match first, then mDeBERTa zero-shot fallback"
+    help = "Auto-categorize: DB keyword match first, then mDeBERTa zero-shot fallback. Includes transactions stuck in placeholder categories."
 
     def add_arguments(self, parser):
         parser.add_argument("--all", action="store_true", help="Re-run on ALL transactions")
@@ -220,9 +245,10 @@ class Command(BaseCommand):
         min_score = options["min_score"]
         hf_token = settings.HUGGINGFACE_API_KEY
 
-        qs = BankTransaction.objects.all() if options["all"] else BankTransaction.objects.filter(category__isnull=True)
-        if options.get("user"):
-            qs = qs.filter(user_id=options["user"])
+        qs = _needs_categorizing_qs(
+            user_id=options.get("user"),
+            include_all=options["all"],
+        )
 
         total = qs.count()
         if total == 0:
@@ -231,15 +257,19 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Processing {total} transactions...\n")
 
+        good_categories = [
+            c for c in TransactionCategory.objects.filter(active=True)
+            if c.name.strip().lower() not in JUNK_NAMES
+        ]
+        cat_names = [c.name for c in good_categories]
+
         keyword_hits = llm_hits = llm_new = llm_skipped = errors = 0
 
         for txn in qs.iterator():
             desc = txn.description.strip()
             t = _txn_type(txn)
-            categories = list(TransactionCategory.objects.filter(active=True))
 
-            # 1. DB keyword match
-            matched = _keyword_match(txn, categories)
+            matched = _keyword_match(txn, good_categories)
             if matched:
                 if not dry:
                     txn.category = matched
@@ -248,8 +278,6 @@ class Command(BaseCommand):
                 self.stdout.write(f"  [KW]  {desc[:60]:<60} → {matched.name}")
                 continue
 
-            # 2. mDeBERTa zero-shot
-            cat_names = [c.name for c in categories]
             try:
                 result = _zero_shot_classify(desc, cat_names, hf_token)
             except Exception as e:
@@ -269,7 +297,6 @@ class Command(BaseCommand):
                 ))
                 continue
 
-            # very low score even after clue boost = genuinely unknown, make new category
             is_new = score < 0.35 and not result["clue"]
             final_name = desc.split()[0].title() if is_new else cat_name
 
@@ -294,10 +321,10 @@ class Command(BaseCommand):
                 )
 
         self.stdout.write("\n" + "─" * 70)
-        self.stdout.write(self.style.SUCCESS(f"Keyword matches  : {keyword_hits}"))
-        self.stdout.write(self.style.SUCCESS(f"Zero-shot matches : {llm_hits}"))
-        self.stdout.write(self.style.SUCCESS(f"New categories   : {llm_new}"))
+        self.stdout.write(self.style.SUCCESS(f"Keyword matches    : {keyword_hits}"))
+        self.stdout.write(self.style.SUCCESS(f"Zero-shot matches  : {llm_hits}"))
+        self.stdout.write(self.style.SUCCESS(f"New categories     : {llm_new}"))
         self.stdout.write(self.style.WARNING(f"Skipped (low score): {llm_skipped}"))
-        self.stdout.write(self.style.ERROR(f"Errors           : {errors}"))
+        self.stdout.write(self.style.ERROR(f"Errors             : {errors}"))
         if dry:
             self.stdout.write(self.style.WARNING("\nDRY RUN — nothing was saved."))
