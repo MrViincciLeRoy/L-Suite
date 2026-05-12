@@ -134,9 +134,8 @@ def _keyword_match(txn, categories):
 
 
 def _zero_shot_classify(description, cat_names, hf_token):
-    from huggingface_hub import InferenceClient
+    import requests
 
-    client = InferenceClient(token=hf_token)
     desc_lower = description.lower()
 
     score_boost = {}
@@ -147,13 +146,16 @@ def _zero_shot_classify(description, cat_names, hf_token):
             if not found_clue:
                 found_clue = clue
 
-    results = client.zero_shot_classification(
-        text=description,
-        labels=cat_names,
-        model=HF_MODEL_ID,
+    resp = requests.post(
+        f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}",
+        headers={"Authorization": f"Bearer {hf_token}"},
+        json={"inputs": description, "parameters": {"candidate_labels": cat_names}},
+        timeout=30,
     )
+    resp.raise_for_status()
+    data = resp.json()
 
-    score_dict = {r["label"]: r["score"] for r in results}
+    score_dict = dict(zip(data["labels"], data["scores"]))
     for cat_name, boost in score_boost.items():
         if cat_name in score_dict:
             score_dict[cat_name] += boost
