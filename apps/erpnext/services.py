@@ -47,6 +47,30 @@ class ERPNextService:
             row["cost_center"] = cost_center
         return row
 
+    def _extract_amount(self, transaction):
+        """
+        Safely pull the transaction amount regardless of whether values are
+        None, empty string, Decimal, float, or str "0.00".
+        Priority: withdrawal -> deposit -> amount field.
+        """
+        def to_float(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return 0.0
+
+        withdrawal = to_float(getattr(transaction, 'withdrawal', None))
+        deposit    = to_float(getattr(transaction, 'deposit', None))
+        amount     = to_float(getattr(transaction, 'amount', None))
+
+        if withdrawal != 0.0:
+            return abs(withdrawal)
+        if deposit != 0.0:
+            return abs(deposit)
+        if amount != 0.0:
+            return abs(amount)
+        return 0.0
+
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
             raise ValueError("Transaction must be categorized before syncing")
@@ -57,19 +81,28 @@ class ERPNextService:
             )
 
         posting_date = transaction.date.strftime('%Y-%m-%d')
-        amount = abs(float(transaction.withdrawal or 0) or float(transaction.deposit or 0))
+        amount = self._extract_amount(transaction)
 
-        if amount == 0:
-            raise ValueError(f"Transaction {transaction.id} has zero amount, skipping")
+        if amount == 0.0:
+            logger.warning(
+                f"Transaction {transaction.id} ({transaction.description!r}) zero amount ? "
+                f"withdrawal={getattr(transaction,'withdrawal',None)!r} "
+                f"deposit={getattr(transaction,'deposit',None)!r} "
+                f"amount={getattr(transaction,'amount',None)!r}"
+            )
+            raise ValueError(
+                f"Transaction {transaction.id} has zero amount ? "
+                "check withdrawal/deposit/amount fields in the database"
+            )
 
         if transaction.transaction_type == 'debit':
-            bank_row = self._account_row(self.config.bank_account, 0, amount)
+            bank_row    = self._account_row(self.config.bank_account, 0, amount)
             expense_row = self._account_row(
                 transaction.category.erpnext_account, amount, 0,
                 self.config.default_cost_center or None,
             )
         else:
-            bank_row = self._account_row(self.config.bank_account, amount, 0)
+            bank_row    = self._account_row(self.config.bank_account, amount, 0)
             expense_row = self._account_row(
                 transaction.category.erpnext_account, 0, amount,
                 self.config.default_cost_center or None,
@@ -85,7 +118,7 @@ class ERPNextService:
         }
 
         if transaction.reference_number:
-            journal_data["cheque_no"] = transaction.reference_number
+            journal_data["cheque_no"]  = transaction.reference_number
             journal_data["cheque_date"] = posting_date
 
         url = f"{self.base_url}/api/resource/Journal Entry"
@@ -97,10 +130,10 @@ class ERPNextService:
             response.raise_for_status()
             journal_entry_name = response.json().get('data', {}).get('name')
 
-            transaction.erpnext_synced = True
+            transaction.erpnext_synced       = True
             transaction.erpnext_journal_entry = journal_entry_name
-            transaction.erpnext_sync_date = datetime.utcnow()
-            transaction.erpnext_error = ''
+            transaction.erpnext_sync_date    = datetime.utcnow()
+            transaction.erpnext_error        = ''
             transaction.save()
 
             ERPNextSyncLog.objects.create(
@@ -127,7 +160,7 @@ class ERPNextService:
             raise
 
     def _handle_sync_error(self, transaction, error_message):
-        logger.error(f"Sync failed: {error_message}")
+        logger.error(f"Sync failed for transaction {transaction.id}: {error_message}")
         transaction.erpnext_error = error_message
         transaction.save()
         ERPNextSyncLog.objects.create(
@@ -139,14 +172,10 @@ class ERPNextService:
         )
 
     def get_chart_of_accounts(self):
-        """
-        Fetch all accounts without a company filter (Frappe filter syntax varies by version).
-        We fetch all leaf accounts and optionally filter client-side by company.
-        """
         url = f"{self.base_url}/api/resource/Account"
         all_accounts = []
-        page_start = 0
-        page_length = 500
+        page_start   = 0
+        page_length  = 500
 
         while True:
             params = {
@@ -173,11 +202,9 @@ class ERPNextService:
                 break
             page_start += page_length
 
-        # Filter to the configured company if we got results with company info
         company = (self.config.default_company or '').strip()
         if company and all_accounts and all_accounts[0].get('company') is not None:
-            filtered = [a for a in all_accounts if a.get('company') == company]
-            # Fall back to all if filter yields nothing (company name mismatch)
+            filtered     = [a for a in all_accounts if a.get('company') == company]
             all_accounts = filtered if filtered else all_accounts
 
         return all_accounts
