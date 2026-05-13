@@ -16,6 +16,10 @@ urlpatterns = [
     path('bulk-operations/preview-categorization/', views.preview_categorization, name='preview_categorization'),
     path('bulk-operations/sync-to-erpnext/', views.bulk_sync, name='bulk_sync'),
 
+    # Preflight: assign ERPNext accounts to cats before syncing
+    path('bulk-operations/sync-preflight/', views.sync_preflight, name='sync_preflight'),
+    path('bulk-operations/sync-now/', views.bulk_sync_post, name='bulk_sync_post'),
+
     # AJAX single-transaction classifier (no save)
     path('classify/', views.classify_single, name='classify_single'),
 

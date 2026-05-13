@@ -2,11 +2,13 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
+from django.db.models import Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 # Third-party / standard library
+import json
 import os
 import requests as http_requests
 
@@ -28,7 +30,83 @@ from .services import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
+ITEMS_PER_PAGE = 20
+
+
+def _get_active_config(user=None):
+    """Return the first active ERPNextConfig, optionally scoped to a user."""
+    qs = ERPNextConfig.objects.filter(is_active=True)
+    if user:
+        qs = qs.filter(user=user)
+    return qs.first()
+
+
+def _active_config_or_error(user=None):
+    """
+    Return (config, None) when an active config exists, else (None, JsonResponse).
+    Convenience wrapper for JSON views that need an active config.
+    """
+    config = _get_active_config(user)
+    if not config:
+        return None, JsonResponse(
+            {'success': False, 'message': 'No active ERPNext configuration'},
+            status=400,
+        )
+    return config, None
+
+
+def _paginate(queryset, request, per_page=ITEMS_PER_PAGE):
+    """Return a Page object for *queryset* using ``?page=`` from *request*."""
+    paginator = Paginator(queryset, per_page)
+    page_number = request.GET.get('page', 1)
+    try:
+        return paginator.page(page_number)
+    except (EmptyPage, PageNotAnInteger):
+        return paginator.page(1)
+
+
+def _junk_annotate(transactions, junk_ids_set):
+    """Wrap each transaction in a dict that includes an ``is_junk`` flag."""
+    return [
+        {
+            'obj': t,
+            'is_junk': bool(t.category_id and t.category_id in junk_ids_set),
+        }
+        for t in transactions
+    ]
+
+
+def _redirect_back(request, fallback_name):
+    """Redirect to HTTP_REFERER or fall back to the named URL."""
+    return redirect(request.META.get('HTTP_REFERER', reverse(fallback_name)))
+
+
+def _apply_bulk_sync(config):
+    """
+    Run BulkSyncService and return (success, failed, total).
+    Raises on service errors ? callers must catch.
+    """
+    service = BulkSyncService(config)
+    return service.sync_all_ready()
+
+
+def _handle_bulk_sync_result(request, success, failed, total):
+    """Attach the appropriate Django message after a bulk-sync run."""
+    if total == 0:
+        messages.info(request, 'No transactions ready to sync.')
+    elif failed == 0:
+        messages.success(request, f'Synced {success} of {total} transactions!')
+    else:
+        messages.warning(request, f'Synced {success}, failed {failed} out of {total}.')
+
+
+# ---------------------------------------------------------------------------
+# ERPNext Config views
+# ---------------------------------------------------------------------------
 
 @login_required
 def configs(request):
@@ -36,22 +114,31 @@ def configs(request):
     return render(request, 'erpnext/configs.html', {'configs': configs})
 
 
+def _config_from_post(request, instance=None):
+    """Build (but do not save) an ERPNextConfig from POST data."""
+    is_active = 'is_active' in request.POST
+    fields = dict(
+        name=request.POST['name'],
+        base_url=request.POST['base_url'],
+        api_key=request.POST['api_key'],
+        api_secret=request.POST['api_secret'],
+        default_company=request.POST.get('default_company', ''),
+        bank_account=request.POST.get('bank_account', ''),
+        default_cost_center=request.POST.get('default_cost_center', ''),
+        is_active=is_active,
+    )
+    if instance is None:
+        return ERPNextConfig(**fields), is_active
+    for k, v in fields.items():
+        setattr(instance, k, v)
+    return instance, is_active
+
+
 @login_required
 def new_config(request):
     if request.method == 'POST':
-        is_active = 'is_active' in request.POST
-
-        config = ERPNextConfig(
-            user=request.user,
-            name=request.POST['name'],
-            base_url=request.POST['base_url'],
-            api_key=request.POST['api_key'],
-            api_secret=request.POST['api_secret'],
-            default_company=request.POST.get('default_company', ''),
-            bank_account=request.POST.get('bank_account', ''),
-            default_cost_center=request.POST.get('default_cost_center', ''),
-            is_active=is_active,
-        )
+        config, is_active = _config_from_post(request)
+        config.user = request.user
 
         service = ERPNextService(config)
         success, message = service.test_connection()
@@ -75,20 +162,10 @@ def edit_config(request, pk):
     config = get_object_or_404(ERPNextConfig, pk=pk, user=request.user)
 
     if request.method == 'POST':
-        is_active = 'is_active' in request.POST
-
-        config.name = request.POST['name']
-        config.base_url = request.POST['base_url']
-        config.api_key = request.POST['api_key']
-        config.api_secret = request.POST['api_secret']
-        config.default_company = request.POST.get('default_company', '')
-        config.bank_account = request.POST.get('bank_account', '')
-        config.default_cost_center = request.POST.get('default_cost_center', '')
-        config.is_active = is_active
+        config, is_active = _config_from_post(request, instance=config)
 
         service = ERPNextService(config)
         success, message = service.test_connection()
-
         if not success:
             messages.warning(request, f'Connection test failed: {message}')
 
@@ -130,14 +207,19 @@ def activate_config(request, pk):
     return redirect(reverse('erpnext:configs'))
 
 
+# ---------------------------------------------------------------------------
+# Sync views
+# ---------------------------------------------------------------------------
+
 @login_required
 def sync_logs(request):
-    logs_qs = ERPNextSyncLog.objects.filter(
-        config__user=request.user
-    ).select_related('config').order_by('-sync_date')
-
-    paginator = Paginator(logs_qs, 50)
-    page = paginator.get_page(request.GET.get('page', 1))
+    logs_qs = (
+        ERPNextSyncLog.objects
+        .filter(config__user=request.user)
+        .select_related('config')
+        .order_by('-sync_date')
+    )
+    page = _paginate(logs_qs, request, per_page=50)
     return render(request, 'erpnext/sync_logs.html', {'logs': page})
 
 
@@ -146,11 +228,14 @@ def sync_transaction(request, pk):
     transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
 
     if not transaction.category_id:
-        return JsonResponse({'success': False, 'message': 'Transaction must be categorized first'}, status=400)
+        return JsonResponse(
+            {'success': False, 'message': 'Transaction must be categorized first'},
+            status=400,
+        )
 
-    config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
-    if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+    config, err = _active_config_or_error(user=request.user)
+    if err:
+        return err
 
     try:
         service = ERPNextService(config)
@@ -166,13 +251,11 @@ def sync_transaction(request, pk):
 
 @login_required
 def fetch_accounts(request):
-    config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
-    if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
-
+    config, err = _active_config_or_error(user=request.user)
+    if err:
+        return err
     try:
-        service = ERPNextService(config)
-        accounts = service.get_chart_of_accounts()
+        accounts = ERPNextService(config).get_chart_of_accounts()
         return JsonResponse({'success': True, 'accounts': accounts})
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
@@ -180,18 +263,19 @@ def fetch_accounts(request):
 
 @login_required
 def fetch_cost_centers(request):
-    config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
-    if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
-
+    config, err = _active_config_or_error(user=request.user)
+    if err:
+        return err
     try:
-        service = ERPNextService(config)
-        cost_centers = service.get_cost_centers()
+        cost_centers = ERPNextService(config).get_cost_centers()
         return JsonResponse({'success': True, 'cost_centers': cost_centers})
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
-ITEMS_PER_PAGE = 20
 
+
+# ---------------------------------------------------------------------------
+# Category views
+# ---------------------------------------------------------------------------
 
 @login_required
 def categories(request):
@@ -206,9 +290,10 @@ def categories(request):
         for c in cats
     ]
 
-    # Pass ERPNext config status so the template can show connection state
     active_config = ERPNextConfig.objects.filter(user=request.user, is_active=True).first()
-    any_config = active_config or ERPNextConfig.objects.filter(user=request.user).order_by('-created_at').first()
+    any_config = active_config or ERPNextConfig.objects.filter(
+        user=request.user
+    ).order_by('-created_at').first()
 
     return render(request, 'bridge/categories.html', {
         'categories_with_stats': categories_with_stats,
@@ -217,19 +302,23 @@ def categories(request):
     })
 
 
+def _category_fields_from_post(request):
+    """Return a dict of TransactionCategory field values extracted from POST."""
+    return dict(
+        name=request.POST['name'],
+        erpnext_account=request.POST['erpnext_account'],
+        transaction_type=request.POST['transaction_type'],
+        keywords=request.POST.get('keywords', ''),
+        tags=request.POST.get('tags', ''),
+        active=request.POST.get('active', 'true') == 'true',
+        color=request.POST.get('color') or None,
+    )
+
 
 @login_required
 def new_category(request):
     if request.method == 'POST':
-        TransactionCategory.objects.create(
-            name=request.POST['name'],
-            erpnext_account=request.POST['erpnext_account'],
-            transaction_type=request.POST['transaction_type'],
-            keywords=request.POST.get('keywords', ''),
-            tags=request.POST.get('tags', ''),
-            active=request.POST.get('active', 'true') == 'true',
-            color=request.POST.get('color') or None,
-        )
+        TransactionCategory.objects.create(**_category_fields_from_post(request))
         messages.success(request, 'Category created.')
         return redirect(reverse('bridge:categories'))
     return render(request, 'bridge/category_form.html')
@@ -239,13 +328,8 @@ def new_category(request):
 def edit_category(request, pk):
     category = get_object_or_404(TransactionCategory, pk=pk)
     if request.method == 'POST':
-        category.name = request.POST['name']
-        category.erpnext_account = request.POST['erpnext_account']
-        category.transaction_type = request.POST['transaction_type']
-        category.keywords = request.POST.get('keywords', '')
-        category.tags = request.POST.get('tags', '')
-        category.active = request.POST.get('active', 'true') == 'true'
-        category.color = request.POST.get('color') or None
+        for k, v in _category_fields_from_post(request).items():
+            setattr(category, k, v)
         category.save()
         messages.success(request, 'Category updated.')
         return redirect(reverse('bridge:categories'))
@@ -268,19 +352,17 @@ def delete_category(request, pk):
 @login_required
 def category_transactions(request, pk):
     category = get_object_or_404(TransactionCategory, pk=pk)
-    txns_qs = category.transactions.order_by('-date')
-    paginator = Paginator(txns_qs, ITEMS_PER_PAGE)
-    page_number = request.GET.get('page', 1)
-    try:
-        page = paginator.page(page_number)
-    except (EmptyPage, PageNotAnInteger):
-        page = paginator.page(1)
+    page = _paginate(category.transactions.order_by('-date'), request)
     return render(request, 'bridge/category_transactions.html', {
         'category': category,
         'transactions': page,
         'is_junk': category.name.strip().lower() in JUNK_CATEGORY_NAMES,
     })
 
+
+# ---------------------------------------------------------------------------
+# Categorization views
+# ---------------------------------------------------------------------------
 
 @login_required
 def auto_categorize(request):
@@ -332,40 +414,42 @@ def auto_categorize_ai(request):
 
 @login_required
 def preview_categorization(request):
-    if request.method == 'POST':
-        service = CategorizationService()
-        preview = service.preview_categorization()
-        return JsonResponse({
-            'total_uncategorized': len(preview['uncategorized']),
-            'will_be_categorized': len(preview['matches']),
-            'no_match': len(preview['no_match']),
-            'matches': [
-                {
-                    'transaction_id': m['transaction'].id,
-                    'description': m['transaction'].description[:50],
-                    'category': m['category'].name,
-                    'keyword': m['keyword'],
-                }
-                for m in preview['matches'][:20]
-            ],
-        })
-    return JsonResponse({'error': 'POST required'}, status=405)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    service = CategorizationService()
+    preview = service.preview_categorization()
+    return JsonResponse({
+        'total_uncategorized': len(preview['uncategorized']),
+        'will_be_categorized': len(preview['matches']),
+        'no_match': len(preview['no_match']),
+        'matches': [
+            {
+                'transaction_id': m['transaction'].id,
+                'description': m['transaction'].description[:50],
+                'category': m['category'].name,
+                'keyword': m['keyword'],
+            }
+            for m in preview['matches'][:20]
+        ],
+    })
 
 
 @login_required
 def classify_single(request):
-    if request.method == 'POST':
-        import json
-        try:
-            body = json.loads(request.body)
-        except Exception:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        raw = body.get('transaction', '').strip()
-        if not raw:
-            return JsonResponse({'error': 'transaction field required'}, status=400)
-        result = classify_transaction(raw)
-        return JsonResponse(result)
-    return JsonResponse({'error': 'POST required'}, status=405)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    raw = body.get('transaction', '').strip()
+    if not raw:
+        return JsonResponse({'error': 'transaction field required'}, status=400)
+
+    return JsonResponse(classify_transaction(raw))
 
 
 @login_required
@@ -375,7 +459,7 @@ def categorize_transaction(request, pk):
         category_id = request.POST.get('category_id')
         if not category_id:
             messages.warning(request, 'Please select a category.')
-            return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
+            return _redirect_back(request, 'gmail:transactions')
         category = get_object_or_404(TransactionCategory, pk=category_id)
         transaction.category = category
         transaction.save()
@@ -384,7 +468,7 @@ def categorize_transaction(request, pk):
             if len(first_word) > 2:
                 category.add_tag(first_word)
         messages.success(request, f'Categorized as "{category.name}".')
-    return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
+    return _redirect_back(request, 'gmail:transactions')
 
 
 @login_required
@@ -393,91 +477,193 @@ def uncategorize_transaction(request, pk):
     if request.method == 'POST':
         if transaction.erpnext_synced:
             messages.warning(request, 'Cannot uncategorize a synced transaction.')
-            return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
+            return _redirect_back(request, 'gmail:transactions')
         transaction.category = None
         transaction.save()
         messages.info(request, 'Transaction uncategorized.')
-    return redirect(request.META.get('HTTP_REFERER', reverse('gmail:transactions')))
+    return _redirect_back(request, 'gmail:transactions')
 
+
+# ---------------------------------------------------------------------------
+# Bulk operation views
+# ---------------------------------------------------------------------------
 
 @login_required
 def bulk_operations(request):
     junk_ids = _get_junk_category_ids()
     junk_ids_set = set(junk_ids)
-
     needs_cat_count = _needs_categorization_qs().count()
-
-    categorized_count = BankTransaction.objects.filter(
-        category__isnull=False,
-    ).exclude(category_id__in=junk_ids).count()
-
-    ready_to_sync_count = BankTransaction.objects.filter(
-        category__isnull=False,
-        erpnext_synced=False,
-    ).exclude(category_id__in=junk_ids).count()
 
     stats = {
         'total': BankTransaction.objects.count(),
         'uncategorized': needs_cat_count,
-        'categorized': categorized_count,
+        'categorized': (
+            BankTransaction.objects
+            .filter(category__isnull=False)
+            .exclude(category_id__in=junk_ids)
+            .count()
+        ),
         'synced': BankTransaction.objects.filter(erpnext_synced=True).count(),
-        'ready_to_sync': ready_to_sync_count,
-        'junk_categorized': BankTransaction.objects.filter(
-            category_id__in=junk_ids,
-            erpnext_synced=False,
-        ).count() if junk_ids else 0,
-        'truly_null': BankTransaction.objects.filter(
-            category__isnull=True,
-            erpnext_synced=False,
-        ).count(),
+        'ready_to_sync': (
+            BankTransaction.objects
+            .filter(category__isnull=False, erpnext_synced=False)
+            .exclude(category_id__in=junk_ids)
+            .count()
+        ),
+        'junk_categorized': (
+            BankTransaction.objects
+            .filter(category_id__in=junk_ids, erpnext_synced=False)
+            .count()
+            if junk_ids else 0
+        ),
+        'truly_null': (
+            BankTransaction.objects
+            .filter(category__isnull=True, erpnext_synced=False)
+            .count()
+        ),
     }
-
-    erpnext_config = ERPNextConfig.objects.filter(is_active=True).first()
-
-    raw_recent = BankTransaction.objects.order_by('-date')[:10]
-    recent_transactions = [
-        {
-            'obj': t,
-            'is_junk': bool(t.category_id and t.category_id in junk_ids_set),
-        }
-        for t in raw_recent
-    ]
-
-    raw_needs_cat = list(_needs_categorization_qs().order_by('-date'))
-    needs_categorizing = [
-        {
-            'obj': t,
-            'is_junk': bool(t.category_id and t.category_id in junk_ids_set),
-        }
-        for t in raw_needs_cat
-    ]
 
     return render(request, 'bridge/bulk_operations.html', {
         'stats': stats,
-        'erpnext_config': erpnext_config,
-        'recent_transactions': recent_transactions,
-        'needs_categorizing': needs_categorizing,
+        'erpnext_config': _get_active_config(),
+        'recent_transactions': _junk_annotate(
+            BankTransaction.objects.order_by('-date')[:10],
+            junk_ids_set,
+        ),
+        'needs_categorizing': _junk_annotate(
+            list(_needs_categorization_qs().order_by('-date')),
+            junk_ids_set,
+        ),
     })
 
 
 @login_required
 def bulk_sync(request):
     if request.method == 'POST':
-        config = ERPNextConfig.objects.filter(is_active=True).first()
+        config = _get_active_config()
         if not config:
             messages.error(request, 'No active ERPNext configuration found.')
             return redirect(reverse('bridge:bulk_operations'))
-        service = BulkSyncService(config)
         try:
-            success, failed, total = service.sync_all_ready()
-            if success > 0 and failed == 0:
-                messages.success(request, f'Synced all {success} transactions!')
-            elif success > 0:
-                messages.warning(request, f'Synced {success}, {failed} failed.')
-            elif total == 0:
-                messages.info(request, 'No transactions ready to sync.')
-            else:
-                messages.error(request, f'Failed to sync {failed} transactions.')
+            success, failed, total = _apply_bulk_sync(config)
+            _handle_bulk_sync_result(request, success, failed, total)
         except Exception as e:
             messages.error(request, f'Sync error: {e}')
+    return redirect(reverse('bridge:bulk_operations'))
+
+
+def _unaccounted_categories(junk_ids):
+    """
+    Return a deduplicated, name-sorted list of TransactionCategory objects that
+    have unsynced transactions but are missing an ERPNext account (null or blank).
+    """
+    base_filter = dict(transactions__erpnext_synced=False)
+
+    def _pending_qs(**extra_filter):
+        return (
+            TransactionCategory.objects
+            .filter(**base_filter, **extra_filter)
+            .exclude(id__in=junk_ids)
+            .annotate(pending_count=Count('transactions'))
+            .filter(pending_count__gt=0)
+            .distinct()
+        )
+
+    cat_map = {
+        c.pk: c
+        for c in list(_pending_qs(erpnext_account__isnull=True))
+               + list(_pending_qs(erpnext_account=''))
+    }
+    return sorted(cat_map.values(), key=lambda c: c.name)
+
+
+@login_required
+def sync_preflight(request):
+    """
+    Before syncing, show categories with ready-to-sync transactions but no
+    ERPNext account. Let the user assign them via dropdown, then redirect to
+    bulk_sync_post.
+    """
+    config = _get_active_config()
+    if not config:
+        messages.error(request, 'No active ERPNext configuration found.')
+        return redirect(reverse('bridge:bulk_operations'))
+
+    junk_ids = _get_junk_category_ids()
+    missing_cats = _unaccounted_categories(junk_ids)
+
+    if request.method == 'POST':
+        updated = 0
+        for cat in missing_cats:
+            account = request.POST.get(f'account_{cat.pk}', '').strip()
+            if account:
+                cat.erpnext_account = account
+                cat.save(update_fields=['erpnext_account'])
+                updated += 1
+
+        if updated:
+            messages.success(
+                request,
+                f'Saved ERPNext accounts for {updated} categor{"y" if updated == 1 else "ies"}.',
+            )
+
+        still_missing = [
+            c for c in missing_cats
+            if not request.POST.get(f'account_{c.pk}', '').strip()
+        ]
+        if still_missing and not request.POST.get('skip_missing'):
+            messages.warning(
+                request,
+                f'{len(still_missing)} categories still have no account ? their transactions will be skipped.',
+            )
+
+        return redirect(reverse('bridge:bulk_sync_post'))
+
+    # Fetch ERPNext accounts for dropdowns
+    erpnext_accounts = []
+    fetch_error = None
+    try:
+        raw = ERPNextService(config).get_chart_of_accounts()
+        erpnext_accounts = sorted(a['name'] for a in raw if not a.get('is_group'))
+    except Exception as e:
+        fetch_error = str(e)
+
+    ready_count = (
+        BankTransaction.objects
+        .filter(
+            category__isnull=False,
+            erpnext_synced=False,
+            category__erpnext_account__isnull=False,
+        )
+        .exclude(category__erpnext_account='')
+        .exclude(category_id__in=junk_ids)
+        .count()
+    )
+
+    return render(request, 'bridge/sync_preflight.html', {
+        'config': config,
+        'missing_cats': missing_cats,
+        'erpnext_accounts': erpnext_accounts,
+        'fetch_error': fetch_error,
+        'ready_count': ready_count,
+    })
+
+
+@login_required
+def bulk_sync_post(request):
+    """
+    GET-triggered bulk sync ? exists so sync_preflight can redirect here after
+    saving accounts.
+    """
+    config = _get_active_config()
+    if not config:
+        messages.error(request, 'No active ERPNext configuration.')
+        return redirect(reverse('bridge:bulk_operations'))
+
+    try:
+        success, failed, total = _apply_bulk_sync(config)
+        _handle_bulk_sync_result(request, success, failed, total)
+    except Exception as e:
+        messages.error(request, f'Sync error: {e}')
+
     return redirect(reverse('bridge:bulk_operations'))

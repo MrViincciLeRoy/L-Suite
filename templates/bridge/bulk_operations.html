@@ -125,7 +125,8 @@
             <div class="card-body d-flex flex-column">
                 <p class="text-muted small">
                     Sync categorized transactions to ERPNext as journal entries.
-                    Only transactions with a real (non-placeholder) category are synced.
+                    The preflight step lets you assign ERPNext accounts to any
+                    categories that are missing one before syncing.
                 </p>
                 <dl class="row mb-3">
                     <dt class="col-sm-7">Ready to sync:</dt>
@@ -142,10 +143,8 @@
                 <div class="mt-auto">
                     {% if erpnext_config %}
                         {% if stats.ready_to_sync > 0 %}
-                        <form method="POST" action="{% url 'bridge:bulk_sync' %}">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-success w-100"
-                                    onclick="return confirm('Sync {{ stats.ready_to_sync }} transactions to ERPNext?')">
+                        <form method="GET" action="{% url 'bridge:sync_preflight' %}">
+                            <button type="submit" class="btn btn-success w-100">
                                 <i class="fas fa-cloud-upload-alt"></i> Sync to ERPNext ({{ stats.ready_to_sync }})
                             </button>
                         </form>

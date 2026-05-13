@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Sync Preflight - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-cloud-upload-alt"></i> Sync Preflight</h1>
+    <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back
+    </a>
+</div>
+
+{% if fetch_error %}
+<div class="alert alert-danger">
+    <i class="fas fa-exclamation-triangle"></i>
+    <strong>Could not fetch ERPNext accounts:</strong> {{ fetch_error }}
+    <br><small>Check your ERPNext configuration and connection.</small>
+</div>
+{% endif %}
+
+<!-- Summary bar -->
+<div class="row mb-4">
+    <div class="col-md-4 mb-3">
+        <div class="card border-success h-100">
+            <div class="card-body">
+                <h6 class="text-muted small">Ready to Sync Now</h6>
+                <h3 class="mb-0 text-success">{{ ready_count }}</h3>
+                <small class="text-muted">transactions already have accounts</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card border-warning h-100">
+            <div class="card-body">
+                <h6 class="text-muted small">Categories Needing Account</h6>
+                <h3 class="mb-0 text-warning">{{ missing_cats|length }}</h3>
+                <small class="text-muted">assign below to include them</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-3">
+        <div class="card border-info h-100">
+            <div class="card-body">
+                <h6 class="text-muted small">ERPNext Config</h6>
+                <h3 class="mb-0 text-info" style="font-size:1rem; padding-top:6px;">{{ config.name }}</h3>
+                <small class="text-muted">{{ config.base_url }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="POST">
+    {% csrf_token %}
+
+    {% if missing_cats %}
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-exclamation-circle text-warning"></i>
+                Categories Missing ERPNext Account
+            </h5>
+            {% if erpnext_accounts %}
+            <div class="d-flex align-items-center gap-2">
+                <label class="mb-0 small text-muted">Apply to all:</label>
+                <select id="applyAllSelect" class="form-select form-select-sm" style="width:280px;">
+                    <option value="">— pick an account —</option>
+                    {% for acc in erpnext_accounts %}
+                    <option value="{{ acc }}">{{ acc }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyToAll()">
+                    Apply All
+                </button>
+            </div>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-warning">
+                        <tr>
+                            <th>Category</th>
+                            <th>Type</th>
+                            <th class="text-center">Pending Txns</th>
+                            <th style="min-width:320px;">ERPNext Account</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in missing_cats %}
+                        <tr>
+                            <td>
+                                <strong>{{ cat.name }}</strong>
+                                {% if cat.keywords %}
+                                <br><small class="text-muted">{{ cat.keywords|truncatechars:60 }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if cat.transaction_type == 'debit' %}
+                                    <span class="badge bg-danger">Expense</span>
+                                {% elif cat.transaction_type == 'credit' %}
+                                    <span class="badge bg-success">Income</span>
+                                {% else %}
+                                    <span class="badge bg-info">Transfer</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
+                            </td>
+                            <td>
+                                {% if erpnext_accounts %}
+                                <select name="account_{{ cat.pk }}"
+                                        class="form-select form-select-sm account-select"
+                                        data-cat="{{ cat.pk }}">
+                                    <option value="">— skip this category —</option>
+                                    {% for acc in erpnext_accounts %}
+                                    <option value="{{ acc }}">{{ acc }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% else %}
+                                <input type="text"
+                                       name="account_{{ cat.pk }}"
+                                       class="form-control form-control-sm account-select"
+                                       placeholder="e.g. Bank Charges - DNL">
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="skip_missing" id="skipMissing" value="1">
+                <label class="form-check-label text-muted small" for="skipMissing">
+                    Don't warn me about unassigned categories — just sync what's ready
+                </label>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-success">
+        <i class="fas fa-check-circle"></i>
+        <strong>All categories have ERPNext accounts assigned.</strong>
+        Ready to sync {{ ready_count }} transaction{{ ready_count|pluralize }}.
+    </div>
+    {% endif %}
+
+    <div class="d-flex gap-2 justify-content-end">
+        <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-success btn-lg">
+            <i class="fas fa-cloud-upload-alt"></i>
+            Save Accounts &amp; Sync
+            {% if ready_count %}({{ ready_count }} ready{% if missing_cats %} + up to {{ missing_cats|length }} more{% endif %}){% endif %}
+        </button>
+    </div>
+</form>
+
+<script>
+function applyToAll() {
+    const val = document.getElementById('applyAllSelect').value;
+    if (!val) return;
+    document.querySelectorAll('.account-select').forEach(el => {
+        // only apply to rows that are still unset
+        if (!el.value) {
+            el.value = val;
+        }
+    });
+}
+</script>
+{% endblock %}
