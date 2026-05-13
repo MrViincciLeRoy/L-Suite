@@ -16,8 +16,8 @@ from apps.main.models import (
     ERPNextSyncLog,
     TransactionCategory,
 )
+from apps.erpnext.services import ERPNextService
 from .services import (
-    ERPNextService,
     BulkSyncService,
     CategorizationService,
     classify_transaction,
