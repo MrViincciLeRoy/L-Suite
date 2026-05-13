@@ -122,21 +122,33 @@ class ERPNextService:
             return abs(amount)
         return 0.0
 
-    def _validate_account_name(self, account_name):
+    def _resolve_account(self, search_term):
         """
-        Lightweight sanity check: ERPNext account names usually contain ' - '
-        and the company abbreviation, e.g. 'Bank Charges - V'.
-        A bare single-word lowercase name like 'capitec' is almost certainly wrong.
+        Resolve a partial or full account name to the exact ERPNext account name.
+        If the term already looks fully qualified (contains ' - '), return it as-is.
+        Otherwise, query the Account resource and return the first match.
         """
-        if not account_name:
-            return False, "Account name is empty."
-        stripped = account_name.strip()
-        if ' ' not in stripped and stripped == stripped.lower():
-            return False, (
-                f"'{stripped}' doesn't look like a valid ERPNext account name. "
-                "ERPNext accounts typically look like 'Account Name - CompanyAbbr'."
-            )
-        return True, ""
+        if not search_term:
+            return search_term
+        if ' - ' in search_term:
+            return search_term
+        url = f"{self.base_url}/api/resource/Account"
+        params = {
+            "filters": f'[["name","like","%{search_term}%"]]',
+            "limit_page_length": 1,
+        }
+        try:
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json().get('data', [])
+            if data:
+                resolved = data[0]['name']
+                if resolved != search_term:
+                    logger.info(f"Resolved account '{search_term}' -> '{resolved}'")
+                return resolved
+        except Exception as e:
+            logger.error(f"Account resolution failed for '{search_term}': {e}")
+        return search_term
 
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
@@ -146,12 +158,6 @@ class ERPNextService:
         if not erpnext_account:
             raise ValueError(
                 f"Category '{transaction.category.name}' has no ERPNext account configured"
-            )
-
-        valid, reason = self._validate_account_name(erpnext_account)
-        if not valid:
-            raise ValueError(
-                f"Category '{transaction.category.name}' has an invalid ERPNext account: {reason}"
             )
 
         company = self._resolve_company_name()
@@ -164,16 +170,20 @@ class ERPNextService:
                 "check withdrawal/deposit/amount fields in the database"
             )
 
+        # Resolve both accounts against ERPNext before posting
+        bank_account    = self._resolve_account(self.config.bank_account)
+        expense_account = self._resolve_account(erpnext_account)
+
         if transaction.transaction_type == 'debit':
-            bank_row    = self._account_row(self.config.bank_account, 0, amount)
+            bank_row    = self._account_row(bank_account, 0, amount)
             expense_row = self._account_row(
-                erpnext_account, amount, 0,
+                expense_account, amount, 0,
                 self.config.default_cost_center or None,
             )
         else:
-            bank_row    = self._account_row(self.config.bank_account, amount, 0)
+            bank_row    = self._account_row(bank_account, amount, 0)
             expense_row = self._account_row(
-                erpnext_account, 0, amount,
+                expense_account, 0, amount,
                 self.config.default_cost_center or None,
             )
 

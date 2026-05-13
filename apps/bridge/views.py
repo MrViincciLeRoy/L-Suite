@@ -553,6 +553,24 @@ def sync_preflight(request):
     missing_cats = _unaccounted_categories(junk_ids)
 
     if request.method == 'POST':
+        # Save config overrides (company, bank account, cost center) if changed
+        new_company     = request.POST.get('config_company', '').strip()
+        new_bank        = request.POST.get('config_bank_account', '').strip()
+        new_cost_center = request.POST.get('config_cost_center', '').strip()
+        config_fields   = []
+        if new_company and new_company != config.default_company:
+            config.default_company = new_company
+            config_fields.append('default_company')
+        if new_bank and new_bank != config.bank_account:
+            config.bank_account = new_bank
+            config_fields.append('bank_account')
+        if new_cost_center != config.default_cost_center:
+            config.default_cost_center = new_cost_center
+            config_fields.append('default_cost_center')
+        if config_fields:
+            config.save(update_fields=config_fields)
+            messages.success(request, f'ERPNext settings updated ({", ".join(config_fields)}).')
+
         updated = 0
         for cat in missing_cats:
             account = request.POST.get(f'account_{cat.pk}', '').strip()

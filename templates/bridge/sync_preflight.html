@@ -40,8 +40,46 @@
     </div>
 </div>
 
-{% if missing_cats %}
-<!-- Global account fetcher -->
+<!-- ERPNext Settings (always shown, always editable) -->
+<div class="card mb-4 border-secondary">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-cog"></i> ERPNext Settings</h5>
+        <span id="settingsBadge" class="badge bg-light text-secondary">
+            <i class="fas fa-spinner fa-spin"></i> loading…
+        </span>
+    </div>
+    <div class="card-body">
+        <div id="settingsErrorBanner" class="alert alert-warning d-none">
+            <i class="fas fa-exclamation-triangle"></i>
+            Could not load options from ERPNext — current saved values shown as text.
+        </div>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Company</label>
+                <select name="config_company" id="configCompanySelect" class="form-select" disabled>
+                    <option value="{{ config.default_company }}">{{ config.default_company|default:"— loading… —" }}</option>
+                </select>
+                <div class="form-text text-muted">Currently: <code>{{ config.default_company|default:"not set" }}</code></div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Bank Account</label>
+                <select name="config_bank_account" id="configBankSelect" class="form-select" disabled>
+                    <option value="{{ config.bank_account }}">{{ config.bank_account|default:"— loading… —" }}</option>
+                </select>
+                <div class="form-text text-muted">Currently: <code>{{ config.bank_account|default:"not set" }}</code></div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Default Cost Center <span class="text-muted fw-normal">(optional)</span></label>
+                <select name="config_cost_center" id="configCostCenterSelect" class="form-select" disabled>
+                    <option value="{{ config.default_cost_center }}">{{ config.default_cost_center|default:"— none —" }}</option>
+                </select>
+                <div class="form-text text-muted">Currently: <code>{{ config.default_cost_center|default:"not set" }}</code></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 <div class="card mb-4 border-primary">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
