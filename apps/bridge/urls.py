@@ -18,7 +18,7 @@ urlpatterns = [
     path('bulk-operations/sync-to-erpnext/', views.bulk_sync, name='bulk_sync'),
 
     # Redirects ? these moved to erpnext app
-    path('bulk-operations/sync-preflight/', RedirectView.as_view(pattern_name='erpnext:sync_preflight', permanent=True), name='sync_preflight'),
+    path('bulk-operations/sync-preflight/', RedirectView.as_view(pattern_name='erpnext:sync_preflight', permanent=True), name='sync_logs'),
     path('bulk-operations/sync-now/', RedirectView.as_view(pattern_name='erpnext:bulk_sync_post', permanent=True), name='bulk_sync_post'),
 
     # AJAX single-transaction classifier
