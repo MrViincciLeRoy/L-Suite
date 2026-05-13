@@ -14,13 +14,38 @@ def _get_junk_ids():
         return []
 
 
+def _resolve_bank_from_accounts(service, raw):
+    """
+    _resolve_account() silently returns the raw string on failure — you can't
+    tell "found" from "not found".  This does a definitive lookup against the
+    full chart of accounts and returns (resolved_name | None, all_accounts).
+    """
+    all_accounts = service.get_chart_of_accounts()
+
+    # Exact match
+    for a in all_accounts:
+        if a['name'] == raw:
+            return a['name'], all_accounts
+
+    # Case-insensitive partial match
+    raw_lower = raw.lower()
+    matches = [a for a in all_accounts if raw_lower in a['name'].lower() and not a.get('is_group')]
+    if len(matches) == 1:
+        return matches[0]['name'], all_accounts
+    if len(matches) > 1:
+        bank_matches = [a for a in matches if a.get('account_type') == 'Bank']
+        return (bank_matches or matches)[0]['name'], all_accounts
+
+    return None, all_accounts
+
+
 class Command(BaseCommand):
     help = "Sync categorised bank transactions to ERPNext as Journal Entries"
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="Validate only, no writes")
-        parser.add_argument("--limit", type=int, default=0, help="Max transactions (0 = all)")
-        parser.add_argument("--transaction-id", type=int, default=0, help="Sync a single transaction by ID")
+        parser.add_argument("--limit", type=int, default=0)
+        parser.add_argument("--transaction-id", type=int, default=0)
 
     def handle(self, *args, **options):
         dry_run   = options["dry_run"]
@@ -38,37 +63,65 @@ class Command(BaseCommand):
             raise CommandError(f"ERPNext connection failed: {msg}")
         self.stdout.write(self.style.SUCCESS(f"Connected: {msg}"))
 
-        # ── Validate bank account ────────────────────────────────────────────
-        # The preflight form saves the fully qualified ERPNext name (e.g. "Capitec - V")
-        # directly to config.bank_account. _resolve_account short-circuits on " - "
-        # so no extra API call is needed.
-        bank = (config.bank_account or "").strip()
-        if not bank:
-            raise CommandError(
-                "bank_account is not set. Open the Sync Preflight page, select "
-                "your bank account from the dropdown, and save."
-            )
-
-        resolved_bank = service._resolve_account(bank)
-        if not resolved_bank:
-            raise CommandError(f"Could not resolve bank account '{bank}'.")
-
-        if resolved_bank != bank:
-            self.stdout.write(f"Bank account: '{bank}' → '{resolved_bank}'")
-            if not dry_run:
-                config.bank_account = resolved_bank
-                config.save(update_fields=["bank_account"])
-        else:
-            self.stdout.write(f"Bank account: {resolved_bank}")
-
-        # ── Validate company ─────────────────────────────────────────────────
+        # ── Company ───────────────────────────────────────────────────────────
         try:
             company = service._resolve_company_name()
         except ValueError as exc:
             raise CommandError(str(exc))
         self.stdout.write(f"Company: {company}")
 
-        # ── Build queryset ───────────────────────────────────────────────────
+        # ── Bank account ──────────────────────────────────────────────────────
+        raw_bank = (config.bank_account or "").strip()
+        if not raw_bank:
+            raise CommandError(
+                "bank_account is not set. Open the Sync Preflight page and select one."
+            )
+
+        if " - " in raw_bank:
+            # Already fully qualified — trust it
+            resolved_bank = raw_bank
+            self.stdout.write(f"Bank account: {resolved_bank}")
+        else:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"'{raw_bank}' is not a fully qualified ERPNext account name. Searching…"
+                )
+            )
+            resolved_bank, all_accounts = _resolve_bank_from_accounts(service, raw_bank)
+
+            if not resolved_bank:
+                candidates = sorted(
+                    a['name'] for a in all_accounts
+                    if not a.get('is_group') and a.get('account_type') in ('Bank', 'Cash')
+                )
+                if not candidates:
+                    candidates = sorted(
+                        a['name'] for a in all_accounts
+                        if not a.get('is_group') and a.get('root_type') == 'Asset'
+                    )[:20]
+                self.stdout.write(
+                    self.style.ERROR(f"No ERPNext account matches '{raw_bank}'.")
+                )
+                self.stdout.write("Available Bank/Cash accounts:")
+                for c in candidates:
+                    self.stdout.write(f"  {c}")
+                raise CommandError(
+                    f"Could not resolve bank account '{raw_bank}'. "
+                    "Open Sync Preflight, pick the correct account from the dropdown, save, then retry."
+                )
+
+            self.stdout.write(
+                self.style.SUCCESS(f"Bank account resolved: '{raw_bank}' → '{resolved_bank}'")
+            )
+            if not dry_run:
+                config.bank_account = resolved_bank
+                config.save(update_fields=["bank_account"])
+
+        # Override on the in-memory config so create_journal_entry uses the right name
+        # even before the DB save propagates (and in dry-run mode).
+        config.bank_account = resolved_bank
+
+        # ── Queryset ──────────────────────────────────────────────────────────
         if single_id:
             qs = BankTransaction.objects.filter(pk=single_id)
         else:
@@ -97,51 +150,46 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN — no changes will be written."))
 
-        # ── Pre-validate category accounts ───────────────────────────────────
-        # Each category's erpnext_account should already be a fully qualified
-        # name from the preflight form. We resolve anyway to catch any legacy
-        # short names and persist the corrected value.
+        # ── Pre-resolve category expense accounts ─────────────────────────────
         cat_ids   = list(qs.values_list("category_id", flat=True).distinct())
         cats      = TransactionCategory.objects.filter(pk__in=cat_ids)
         skip_cats = set()
 
         for cat in cats:
-            raw      = (cat.erpnext_account or "").strip()
-            resolved = service._resolve_account(raw)
+            raw = (cat.erpnext_account or "").strip()
+            if " - " in raw:
+                continue  # already qualified, trust it
 
-            if not resolved:
+            resolved = service._resolve_account(raw)
+            if not resolved or resolved == raw:
                 self.stdout.write(
-                    self.style.ERROR(f"  SKIP category '{cat.name}': account '{raw}' unresolvable")
+                    self.style.ERROR(f"  SKIP category '{cat.name}': '{raw}' not resolvable")
                 )
                 skip_cats.add(cat.pk)
                 continue
 
-            if resolved != raw:
-                self.stdout.write(f"  Category '{cat.name}': '{raw}' → '{resolved}'")
-                if not dry_run:
-                    cat.erpnext_account = resolved
-                    cat.save(update_fields=["erpnext_account"])
+            self.stdout.write(f"  Category '{cat.name}': '{raw}' → '{resolved}'")
+            if not dry_run:
+                cat.erpnext_account = resolved
+                cat.save(update_fields=["erpnext_account"])
 
         if skip_cats:
             qs    = qs.exclude(category_id__in=skip_cats)
             total = qs.count()
             self.stdout.write(
-                self.style.WARNING(
-                    f"{len(skip_cats)} category/ies skipped. "
-                    "Use the preflight page to assign valid ERPNext accounts."
-                )
+                self.style.WARNING(f"{len(skip_cats)} category/ies skipped (unresolvable account).")
             )
             if total == 0:
                 self.stdout.write("Nothing left to sync.")
                 return
 
-        # ── Sync loop ────────────────────────────────────────────────────────
+        # ── Sync loop ─────────────────────────────────────────────────────────
         synced = failed = skipped = 0
 
         for txn in qs.iterator():
-            desc = f"#{txn.id} [{txn.date}] {str(txn.description or '')[:60]!r}"
-
+            desc   = f"#{txn.id} [{txn.date}] {str(txn.description or '')[:60]!r}"
             amount = service._extract_amount(txn)
+
             if amount == 0.0:
                 self.stdout.write(f"  SKIP  {desc}: zero amount")
                 skipped += 1
@@ -160,10 +208,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"  FAIL  {desc}: {exc}"))
                 failed += 1
 
-        # ── Summary ──────────────────────────────────────────────────────────
         label = "Would sync" if dry_run else "Synced"
-        self.stdout.write(
-            f"\n{label} {synced}, failed {failed}, skipped {skipped} of {total}."
-        )
+        self.stdout.write(f"\n{label} {synced}, failed {failed}, skipped {skipped} of {total}.")
         if failed:
             raise CommandError(f"{failed} transaction(s) failed.")
