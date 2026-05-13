@@ -48,11 +48,6 @@ class ERPNextService:
         return row
 
     def _extract_amount(self, transaction):
-        """
-        Safely pull the transaction amount regardless of whether values are
-        None, empty string, Decimal, float, or str "0.00".
-        Priority: withdrawal -> deposit -> amount field.
-        """
         def to_float(val):
             try:
                 return float(val)
@@ -74,7 +69,6 @@ class ERPNextService:
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
             raise ValueError("Transaction must be categorized before syncing")
-
         if not transaction.category.erpnext_account:
             raise ValueError(
                 f"Category '{transaction.category.name}' has no ERPNext account configured"
@@ -118,7 +112,7 @@ class ERPNextService:
         }
 
         if transaction.reference_number:
-            journal_data["cheque_no"]  = transaction.reference_number
+            journal_data["cheque_no"]   = transaction.reference_number
             journal_data["cheque_date"] = posting_date
 
         url = f"{self.base_url}/api/resource/Journal Entry"
@@ -130,10 +124,10 @@ class ERPNextService:
             response.raise_for_status()
             journal_entry_name = response.json().get('data', {}).get('name')
 
-            transaction.erpnext_synced       = True
+            transaction.erpnext_synced        = True
             transaction.erpnext_journal_entry = journal_entry_name
-            transaction.erpnext_sync_date    = datetime.utcnow()
-            transaction.erpnext_error        = ''
+            transaction.erpnext_sync_date     = datetime.utcnow()
+            transaction.erpnext_error         = ''
             transaction.save()
 
             ERPNextSyncLog.objects.create(
@@ -171,8 +165,24 @@ class ERPNextService:
             error_message=error_message,
         )
 
+    def get_companies(self):
+        url = f"{self.base_url}/api/resource/Company"
+        params = {
+            'fields': '["name","company_name","abbr","default_currency"]',
+            'limit_page_length': 200,
+        }
+        try:
+            response = requests.get(
+                url, headers=self._get_headers(), params=params, timeout=15,
+            )
+            response.raise_for_status()
+            return response.json().get('data', [])
+        except Exception as e:
+            logger.error(f"Failed to fetch companies: {e}")
+            return []
+
     def get_chart_of_accounts(self):
-        url = f"{self.base_url}/api/resource/Account"
+        url          = f"{self.base_url}/api/resource/Account"
         all_accounts = []
         page_start   = 0
         page_length  = 500
@@ -195,9 +205,7 @@ class ERPNextService:
 
             if not batch:
                 break
-
             all_accounts.extend(batch)
-
             if len(batch) < page_length:
                 break
             page_start += page_length

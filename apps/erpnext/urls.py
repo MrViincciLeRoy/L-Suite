@@ -14,4 +14,6 @@ urlpatterns = [
     path('transactions/<int:pk>/sync/', views.sync_transaction, name='sync_transaction'),
     path('fetch-accounts/', views.fetch_accounts, name='fetch_accounts'),
     path('fetch-cost-centers/', views.fetch_cost_centers, name='fetch_cost_centers'),
+    path('fetch-companies/', views.fetch_companies, name='fetch_companies'),
+    path('update-config-defaults/', views.update_config_defaults, name='update_config_defaults'),
 ]
