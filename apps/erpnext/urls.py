@@ -16,8 +16,8 @@ urlpatterns = [
     path('fetch-cost-centers/', views.fetch_cost_centers, name='fetch_cost_centers'),
     path('fetch-companies/', views.fetch_companies, name='fetch_companies'),
     path('update-config-defaults/', views.update_config_defaults, name='update_config_defaults'),
-
-    # Preflight + final sync (moved from bridge)
     path('sync-preflight/', views.sync_preflight, name='sync_preflight'),
     path('sync-now/', views.bulk_sync_post, name='bulk_sync_post'),
+    path('sync-job/', views.sync_job_status, name='sync_job_status'),
+    path('sync-job/api/', views.sync_job_status_api, name='sync_job_status_api'),
 ]

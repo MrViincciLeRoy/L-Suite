@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Sync Job Status - LSuite{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><i class="fas fa-cloud-upload-alt"></i> ERPNext Sync Job</h1>
+    <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Bulk Ops
+    </a>
+</div>
+
+{% if not has_gh %}
+<div class="alert alert-danger">
+    <i class="fas fa-exclamation-triangle"></i>
+    <strong>GitHub Actions not configured.</strong>
+    Set <code>GH_TOKEN</code> and <code>GH_REPO</code> environment variables.
+</div>
+{% else %}
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-satellite-dish"></i> Job Status</h5>
+        <span id="pollBadge" class="badge bg-secondary">
+            <i class="fas fa-spinner fa-spin"></i> checking…
+        </span>
+    </div>
+    <div class="card-body" id="statusBody">
+        <div class="text-center py-4 text-muted">
+            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+            <p>Fetching latest run from GitHub Actions…</p>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex gap-2">
+    <a href="https://github.com/{{ gh_repo }}/actions" target="_blank" class="btn btn-outline-secondary">
+        <i class="fab fa-github"></i> Open GitHub Actions
+    </a>
+    <a href="{% url 'bridge:sync_logs' %}" class="btn btn-outline-primary">
+        <i class="fas fa-list"></i> View Sync Logs
+    </a>
+</div>
+
+<script>
+const STATUS_API = "{% url 'erpnext:sync_job_status_api' %}";
+let pollTimer = null;
+let pollCount = 0;
+const MAX_POLLS = 60; // 5 min at 5s intervals
+
+const ICONS = {
+    queued:      '<i class="fas fa-clock text-warning"></i>',
+    in_progress: '<i class="fas fa-spinner fa-spin text-primary"></i>',
+    completed:   '<i class="fas fa-check-circle text-success"></i>',
+    failure:     '<i class="fas fa-times-circle text-danger"></i>',
+    cancelled:   '<i class="fas fa-ban text-secondary"></i>',
+};
+
+function fmtTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString();
+}
+
+function renderStatus(data) {
+    const badge = document.getElementById('pollBadge');
+    const body  = document.getElementById('statusBody');
+
+    if (data.error) {
+        badge.className = 'badge bg-danger';
+        badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> error';
+        body.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+        stopPolling();
+        return;
+    }
+
+    if (data.status === 'no_runs') {
+        badge.className = 'badge bg-secondary';
+        badge.innerHTML = 'no runs found';
+        body.innerHTML = '<p class="text-muted">No workflow runs found yet. The job may still be queued.</p>';
+        return;
+    }
+
+    const { status, conclusion, html_url, created_at, updated_at } = data;
+
+    // Badge
+    if (status === 'completed') {
+        badge.className = conclusion === 'success' ? 'badge bg-success' : 'badge bg-danger';
+        badge.innerHTML = conclusion === 'success'
+            ? '<i class="fas fa-check-circle"></i> success'
+            : `<i class="fas fa-times-circle"></i> ${conclusion}`;
+        stopPolling();
+    } else {
+        badge.className = 'badge bg-warning text-dark';
+        badge.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${status}`;
+    }
+
+    const icon = conclusion
+        ? (ICONS[conclusion] || ICONS.completed)
+        : (ICONS[status] || '');
+
+    body.innerHTML = `
+        <div class="row g-3 align-items-center mb-3">
+            <div class="col-auto" style="font-size:2.5rem;">${icon}</div>
+            <div class="col">
+                <h4 class="mb-0 text-capitalize">${conclusion || status}</h4>
+                <p class="text-muted mb-0">
+                    ${status === 'completed' ? 'Finished' : 'Running since'} ${fmtTime(updated_at || created_at)}
+                </p>
+            </div>
+            ${html_url ? `
+            <div class="col-auto">
+                <a href="${html_url}" target="_blank" class="btn btn-outline-dark">
+                    <i class="fab fa-github"></i> View on GitHub
+                </a>
+            </div>` : ''}
+        </div>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Status</dt>
+            <dd class="col-sm-9 text-capitalize">${status}</dd>
+            <dt class="col-sm-3">Conclusion</dt>
+            <dd class="col-sm-9">${conclusion || '—'}</dd>
+            <dt class="col-sm-3">Queued at</dt>
+            <dd class="col-sm-9">${fmtTime(created_at)}</dd>
+            <dt class="col-sm-3">Last updated</dt>
+            <dd class="col-sm-9">${fmtTime(updated_at)}</dd>
+        </dl>
+        ${status === 'completed' && conclusion === 'success' ? `
+        <div class="alert alert-success mt-3 mb-0">
+            <i class="fas fa-check-circle"></i>
+            Sync completed successfully.
+            <a href="{% url 'bridge:sync_logs' %}" class="alert-link ms-1">View sync logs →</a>
+        </div>` : ''}
+        ${status === 'completed' && conclusion !== 'success' ? `
+        <div class="alert alert-danger mt-3 mb-0">
+            <i class="fas fa-times-circle"></i>
+            Job ${conclusion}. Check the
+            <a href="${html_url}" target="_blank" class="alert-link">GitHub Actions log</a> for details.
+        </div>` : ''}
+    `;
+}
+
+function poll() {
+    pollCount++;
+    if (pollCount > MAX_POLLS) { stopPolling(); return; }
+
+    fetch(STATUS_API, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(data => {
+            renderStatus(data);
+            // Stop polling once job is done
+            if (data.status === 'completed' || data.error) stopPolling();
+        })
+        .catch(err => {
+            document.getElementById('pollBadge').className = 'badge bg-danger';
+            document.getElementById('pollBadge').textContent = 'network error';
+        });
+}
+
+function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    poll();
+    pollTimer = setInterval(poll, 5000);
+});
+</script>
+{% endif %}
+{% endblock %}
