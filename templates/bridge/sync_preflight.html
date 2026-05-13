@@ -48,30 +48,48 @@
     </div>
 </div>
 
-<form method="POST">
+{% if missing_cats %}
+<!-- Global account fetcher -->
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
+        <small class="opacity-75">Fetched from: <strong>{{ config.name }}</strong></small>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-8">
+                <label class="form-label fw-semibold">Select ERPNext Account</label>
+                <select id="globalAccountSelect" class="form-select" disabled>
+                    <option value="">— loading accounts… —</option>
+                </select>
+                <div id="fetchStatus" class="form-text text-muted mt-1">
+                    <span id="fetchMsg"><i class="fas fa-spinner fa-spin"></i> Fetching accounts from ERPNext…</span>
+                </div>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button type="button" class="btn btn-primary w-100" id="applyAllBtn" disabled onclick="applyToAll()">
+                    <i class="fas fa-fill-drip"></i> Prefill All Empty
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="refreshAccounts()" title="Refresh accounts">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <div id="applyFeedback" class="mt-2" style="display:none;"></div>
+    </div>
+</div>
+{% endif %}
+
+<form method="POST" id="preflightForm">
     {% csrf_token %}
 
     {% if missing_cats %}
     <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header">
             <h5 class="mb-0">
                 <i class="fas fa-exclamation-circle text-warning"></i>
                 Categories Missing ERPNext Account
             </h5>
-            {% if erpnext_accounts %}
-            <div class="d-flex align-items-center gap-2">
-                <label class="mb-0 small text-muted">Apply to all:</label>
-                <select id="applyAllSelect" class="form-select form-select-sm" style="width:280px;">
-                    <option value="">— pick an account —</option>
-                    {% for acc in erpnext_accounts %}
-                    <option value="{{ acc }}">{{ acc }}</option>
-                    {% endfor %}
-                </select>
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyToAll()">
-                    Apply All
-                </button>
-            </div>
-            {% endif %}
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -106,21 +124,12 @@
                                 <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
                             </td>
                             <td>
-                                {% if erpnext_accounts %}
+                                <!-- Always render a select; JS will populate options after fetch -->
                                 <select name="account_{{ cat.pk }}"
                                         class="form-select form-select-sm account-select"
                                         data-cat="{{ cat.pk }}">
-                                    <option value="">— skip this category —</option>
-                                    {% for acc in erpnext_accounts %}
-                                    <option value="{{ acc }}">{{ acc }}</option>
-                                    {% endfor %}
+                                    <option value="">— loading… —</option>
                                 </select>
-                                {% else %}
-                                <input type="text"
-                                       name="account_{{ cat.pk }}"
-                                       class="form-control form-control-sm account-select"
-                                       placeholder="e.g. Bank Charges - DNL">
-                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -156,15 +165,103 @@
 </form>
 
 <script>
-function applyToAll() {
-    const val = document.getElementById('applyAllSelect').value;
-    if (!val) return;
+let fetchedAccounts = [];
+
+function buildOptions(accounts, currentVal = '') {
+    let html = '<option value="">— skip this category —</option>';
+    accounts.forEach(acc => {
+        const sel = acc === currentVal ? ' selected' : '';
+        html += `<option value="${acc}"${sel}>${acc}</option>`;
+    });
+    return html;
+}
+
+function populateSelects(accounts) {
     document.querySelectorAll('.account-select').forEach(el => {
-        // only apply to rows that are still unset
-        if (!el.value) {
-            el.value = val;
+        const cur = el.value;
+        el.innerHTML = buildOptions(accounts, cur);
+    });
+
+    const globalSel = document.getElementById('globalAccountSelect');
+    globalSel.innerHTML = '<option value="">— pick an account to prefill all —</option>';
+    accounts.forEach(acc => {
+        const opt = document.createElement('option');
+        opt.value = acc;
+        opt.textContent = acc;
+        globalSel.appendChild(opt);
+    });
+    globalSel.disabled = false;
+
+    document.getElementById('applyAllBtn').disabled = false;
+    document.getElementById('fetchMsg').innerHTML =
+        `<i class="fas fa-check-circle text-success"></i> ${accounts.length} accounts loaded`;
+}
+
+function fetchAccounts() {
+    fetch('/erpnext/fetch-accounts/', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.accounts && data.accounts.length) {
+            fetchedAccounts = data.accounts
+                .filter(a => !a.is_group)
+                .map(a => a.name)
+                .sort();
+            populateSelects(fetchedAccounts);
+        } else {
+            showFetchError(data.message || 'No accounts returned.');
         }
+    })
+    .catch(err => showFetchError('Request failed: ' + err));
+}
+
+function showFetchError(msg) {
+    document.getElementById('fetchMsg').innerHTML =
+        `<i class="fas fa-exclamation-triangle text-danger"></i> ${msg} — <a href="#" onclick="refreshAccounts();return false;">retry</a>`;
+    document.querySelectorAll('.account-select').forEach(el => {
+        el.innerHTML = '<option value="">— fetch failed, type manually —</option>';
+        // convert to text input fallback
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.name = el.name;
+        inp.className = 'form-control form-control-sm account-select';
+        inp.dataset.cat = el.dataset.cat;
+        inp.placeholder = 'e.g. Bank Charges - DNL';
+        el.replaceWith(inp);
     });
 }
+
+function refreshAccounts() {
+    document.getElementById('fetchMsg').innerHTML =
+        '<i class="fas fa-spinner fa-spin"></i> Refreshing…';
+    document.getElementById('globalAccountSelect').disabled = true;
+    document.getElementById('applyAllBtn').disabled = true;
+    fetchAccounts();
+}
+
+function applyToAll() {
+    const val = document.getElementById('globalAccountSelect').value;
+    if (!val) return;
+
+    let filled = 0;
+    document.querySelectorAll('.account-select').forEach(el => {
+        if (!el.value) {
+            el.value = val;
+            filled++;
+        }
+    });
+
+    const fb = document.getElementById('applyFeedback');
+    if (filled > 0) {
+        fb.innerHTML = `<div class="alert alert-success py-2"><i class="fas fa-check"></i> Prefilled <strong>${filled}</strong> empty field${filled > 1 ? 's' : ''} with <em>${val}</em>.</div>`;
+    } else {
+        fb.innerHTML = `<div class="alert alert-info py-2"><i class="fas fa-info-circle"></i> All fields already have a value. Clear them first if you want to override.</div>`;
+    }
+    fb.style.display = 'block';
+    setTimeout(() => { fb.style.display = 'none'; }, 4000);
+}
+
+document.addEventListener('DOMContentLoaded', fetchAccounts);
 </script>
 {% endblock %}
