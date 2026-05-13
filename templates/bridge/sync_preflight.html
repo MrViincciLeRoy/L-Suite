@@ -9,14 +9,6 @@
     </a>
 </div>
 
-{% if fetch_error %}
-<div class="alert alert-danger">
-    <i class="fas fa-exclamation-triangle"></i>
-    <strong>Could not fetch ERPNext accounts:</strong> {{ fetch_error }}
-    <br><small>Check your ERPNext configuration and connection.</small>
-</div>
-{% endif %}
-
 <!-- Summary bar -->
 <div class="row mb-4">
     <div class="col-md-4 mb-3">
@@ -41,7 +33,7 @@
         <div class="card border-info h-100">
             <div class="card-body">
                 <h6 class="text-muted small">ERPNext Config</h6>
-                <h3 class="mb-0 text-info" style="font-size:1rem; padding-top:6px;">{{ config.name }}</h3>
+                <p class="mb-0 fw-semibold mt-2">{{ config.name }}</p>
                 <small class="text-muted">{{ config.base_url }}</small>
             </div>
         </div>
@@ -53,24 +45,26 @@
 <div class="card mb-4 border-primary">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
-        <small class="opacity-75">Fetched from: <strong>{{ config.name }}</strong></small>
+        <span id="fetchBadge" class="badge bg-light text-primary">
+            <i class="fas fa-spinner fa-spin"></i> loading…
+        </span>
     </div>
     <div class="card-body">
         <div class="row g-3 align-items-end">
             <div class="col-md-8">
                 <label class="form-label fw-semibold">Select ERPNext Account</label>
                 <select id="globalAccountSelect" class="form-select" disabled>
-                    <option value="">— loading accounts… —</option>
+                    <option value="">— fetching accounts from ERPNext… —</option>
                 </select>
-                <div id="fetchStatus" class="form-text text-muted mt-1">
-                    <span id="fetchMsg"><i class="fas fa-spinner fa-spin"></i> Fetching accounts from ERPNext…</span>
-                </div>
+                <div id="fetchError" class="text-danger small mt-1" style="display:none;"></div>
             </div>
             <div class="col-md-4 d-flex gap-2">
-                <button type="button" class="btn btn-primary w-100" id="applyAllBtn" disabled onclick="applyToAll()">
+                <button type="button" class="btn btn-primary w-100" id="applyAllBtn"
+                        disabled onclick="applyToAll()">
                     <i class="fas fa-fill-drip"></i> Prefill All Empty
                 </button>
-                <button type="button" class="btn btn-outline-secondary" onclick="refreshAccounts()" title="Refresh accounts">
+                <button type="button" class="btn btn-outline-secondary flex-shrink-0"
+                        onclick="fetchAccounts()" title="Retry fetch">
                     <i class="fas fa-sync-alt"></i>
                 </button>
             </div>
@@ -124,10 +118,10 @@
                                 <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
                             </td>
                             <td>
-                                <!-- Always render a select; JS will populate options after fetch -->
                                 <select name="account_{{ cat.pk }}"
                                         class="form-select form-select-sm account-select"
-                                        data-cat="{{ cat.pk }}">
+                                        data-cat="{{ cat.pk }}"
+                                        disabled>
                                     <option value="">— loading… —</option>
                                 </select>
                             </td>
@@ -139,7 +133,8 @@
         </div>
         <div class="card-footer">
             <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="skip_missing" id="skipMissing" value="1">
+                <input class="form-check-input" type="checkbox" name="skip_missing"
+                       id="skipMissing" value="1">
                 <label class="form-check-label text-muted small" for="skipMissing">
                     Don't warn me about unassigned categories — just sync what's ready
                 </label>
@@ -156,88 +151,132 @@
 
     <div class="d-flex gap-2 justify-content-end">
         <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-success btn-lg">
+        <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
             <i class="fas fa-cloud-upload-alt"></i>
             Save Accounts &amp; Sync
-            {% if ready_count %}({{ ready_count }} ready{% if missing_cats %} + up to {{ missing_cats|length }} more{% endif %}){% endif %}
+            {% if ready_count %}
+            ({{ ready_count }} ready{% if missing_cats %} + up to {{ missing_cats|length }} more{% endif %})
+            {% endif %}
         </button>
     </div>
 </form>
 
 <script>
-let fetchedAccounts = [];
+let allAccounts = [];
 
-function buildOptions(accounts, currentVal = '') {
+function groupedOptions(accounts, currentVal) {
+    // Group by root_type: Asset, Liability, Income, Expense, Equity
+    const groups = {};
+    accounts.forEach(a => {
+        const g = a.root_type || 'Other';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(a);
+    });
+
     let html = '<option value="">— skip this category —</option>';
-    accounts.forEach(acc => {
-        const sel = acc === currentVal ? ' selected' : '';
-        html += `<option value="${acc}"${sel}>${acc}</option>`;
+    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
+    order.forEach(gName => {
+        if (!groups[gName]) return;
+        html += `<optgroup label="${gName}">`;
+        groups[gName].forEach(a => {
+            const sel = a.name === currentVal ? ' selected' : '';
+            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
+            html += `<option value="${a.name}"${sel}>${label}</option>`;
+        });
+        html += '</optgroup>';
     });
     return html;
 }
 
-function populateSelects(accounts) {
-    document.querySelectorAll('.account-select').forEach(el => {
-        const cur = el.value;
-        el.innerHTML = buildOptions(accounts, cur);
+function globalOptions(accounts) {
+    let html = '<option value="">— pick an account to prefill all —</option>';
+    const groups = {};
+    accounts.forEach(a => {
+        const g = a.root_type || 'Other';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(a);
     });
-
-    const globalSel = document.getElementById('globalAccountSelect');
-    globalSel.innerHTML = '<option value="">— pick an account to prefill all —</option>';
-    accounts.forEach(acc => {
-        const opt = document.createElement('option');
-        opt.value = acc;
-        opt.textContent = acc;
-        globalSel.appendChild(opt);
+    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
+    order.forEach(gName => {
+        if (!groups[gName]) return;
+        html += `<optgroup label="${gName}">`;
+        groups[gName].forEach(a => {
+            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
+            html += `<option value="${a.name}">${label}</option>`;
+        });
+        html += '</optgroup>';
     });
-    globalSel.disabled = false;
-
-    document.getElementById('applyAllBtn').disabled = false;
-    document.getElementById('fetchMsg').innerHTML =
-        `<i class="fas fa-check-circle text-success"></i> ${accounts.length} accounts loaded`;
+    return html;
 }
 
 function fetchAccounts() {
+    const badge = document.getElementById('fetchBadge');
+    const errDiv = document.getElementById('fetchError');
+    const globalSel = document.getElementById('globalAccountSelect');
+    const applyBtn = document.getElementById('applyAllBtn');
+
+    if (badge) {
+        badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading…';
+        badge.className = 'badge bg-light text-primary';
+    }
+    if (errDiv) errDiv.style.display = 'none';
+    if (globalSel) globalSel.disabled = true;
+    if (applyBtn) applyBtn.disabled = true;
+
     fetch('/erpnext/fetch-accounts/', {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
     .then(r => r.json())
     .then(data => {
-        if (data.success && data.accounts && data.accounts.length) {
-            fetchedAccounts = data.accounts
-                .filter(a => !a.is_group)
-                .map(a => a.name)
-                .sort();
-            populateSelects(fetchedAccounts);
-        } else {
-            showFetchError(data.message || 'No accounts returned.');
+        if (!data.success || !data.accounts || data.accounts.length === 0) {
+            throw new Error(data.message || 'No accounts returned from ERPNext.');
+        }
+
+        allAccounts = data.accounts;
+
+        // Populate global selector
+        if (globalSel) {
+            globalSel.innerHTML = globalOptions(allAccounts);
+            globalSel.disabled = false;
+        }
+        if (applyBtn) applyBtn.disabled = false;
+
+        // Populate each per-category select
+        document.querySelectorAll('.account-select').forEach(el => {
+            const cur = el.value;
+            el.innerHTML = groupedOptions(allAccounts, cur);
+            el.disabled = false;
+        });
+
+        if (badge) {
+            badge.innerHTML = `<i class="fas fa-check-circle"></i> ${allAccounts.length} accounts`;
+            badge.className = 'badge bg-success';
         }
     })
-    .catch(err => showFetchError('Request failed: ' + err));
-}
-
-function showFetchError(msg) {
-    document.getElementById('fetchMsg').innerHTML =
-        `<i class="fas fa-exclamation-triangle text-danger"></i> ${msg} — <a href="#" onclick="refreshAccounts();return false;">retry</a>`;
-    document.querySelectorAll('.account-select').forEach(el => {
-        el.innerHTML = '<option value="">— fetch failed, type manually —</option>';
-        // convert to text input fallback
-        const inp = document.createElement('input');
-        inp.type = 'text';
-        inp.name = el.name;
-        inp.className = 'form-control form-control-sm account-select';
-        inp.dataset.cat = el.dataset.cat;
-        inp.placeholder = 'e.g. Bank Charges - DNL';
-        el.replaceWith(inp);
+    .catch(err => {
+        const msg = err.message || 'Unknown error';
+        if (badge) {
+            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+            badge.className = 'badge bg-danger';
+        }
+        if (errDiv) {
+            errDiv.textContent = `Could not fetch accounts: ${msg}. Click ↻ to retry.`;
+            errDiv.style.display = 'block';
+        }
+        // fallback: convert selects to text inputs
+        document.querySelectorAll('.account-select').forEach(el => {
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.name = el.name;
+            inp.className = 'form-control form-control-sm account-select';
+            inp.dataset.cat = el.dataset.cat;
+            inp.placeholder = 'e.g. Bank Charges - DNL';
+            el.replaceWith(inp);
+        });
+        if (globalSel) {
+            globalSel.innerHTML = '<option value="">— fetch failed —</option>';
+        }
     });
-}
-
-function refreshAccounts() {
-    document.getElementById('fetchMsg').innerHTML =
-        '<i class="fas fa-spinner fa-spin"></i> Refreshing…';
-    document.getElementById('globalAccountSelect').disabled = true;
-    document.getElementById('applyAllBtn').disabled = true;
-    fetchAccounts();
 }
 
 function applyToAll() {
@@ -253,11 +292,9 @@ function applyToAll() {
     });
 
     const fb = document.getElementById('applyFeedback');
-    if (filled > 0) {
-        fb.innerHTML = `<div class="alert alert-success py-2"><i class="fas fa-check"></i> Prefilled <strong>${filled}</strong> empty field${filled > 1 ? 's' : ''} with <em>${val}</em>.</div>`;
-    } else {
-        fb.innerHTML = `<div class="alert alert-info py-2"><i class="fas fa-info-circle"></i> All fields already have a value. Clear them first if you want to override.</div>`;
-    }
+    fb.innerHTML = filled > 0
+        ? `<div class="alert alert-success py-2 mb-0"><i class="fas fa-check"></i> Prefilled <strong>${filled}</strong> empty field${filled !== 1 ? 's' : ''} with <em>${val}</em>.</div>`
+        : `<div class="alert alert-info py-2 mb-0"><i class="fas fa-info-circle"></i> All fields already filled. Clear them first to override.</div>`;
     fb.style.display = 'block';
     setTimeout(() => { fb.style.display = 'none'; }, 4000);
 }
