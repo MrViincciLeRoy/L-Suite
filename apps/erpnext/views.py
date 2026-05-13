@@ -17,8 +17,6 @@ from .services import ERPNextService
 logger = logging.getLogger(__name__)
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
 def _active_config(user):
     return ERPNextConfig.objects.filter(user=user, is_active=True).first()
 
@@ -65,7 +63,7 @@ def _unaccounted_categories(junk_ids):
 
 def _dispatch_gh_actions(workflow_file='erpnext_sync.yml'):
     gh_token = os.environ.get('GH_TOKEN', '')
-    gh_repo = os.environ.get('GH_REPO', '')
+    gh_repo  = os.environ.get('GH_REPO', '')
     if not gh_token or not gh_repo:
         return False, 'GH_TOKEN or GH_REPO not set.'
     try:
@@ -296,25 +294,30 @@ def sync_preflight(request):
         messages.error(request, 'No active ERPNext configuration found.')
         return redirect(reverse('bridge:bulk_operations'))
 
-    junk_ids = _get_junk_category_ids()
+    junk_ids    = _get_junk_category_ids()
     missing_cats = _unaccounted_categories(junk_ids)
 
     if request.method == 'POST':
-        # 1. Save config overrides
+        # 1. Save the exact ERPNext names the user selected in the dropdowns.
+        #    Always overwrite when a non-empty value is posted — this is how
+        #    "capitec" gets replaced with the real qualified name like "Capitec - V".
         config_fields = []
         for field, post_key in [
-            ('default_company', 'config_company'),
-            ('bank_account', 'config_bank_account'),
+            ('default_company',     'config_company'),
+            ('bank_account',        'config_bank_account'),
             ('default_cost_center', 'config_cost_center'),
         ]:
             val = request.POST.get(post_key, '').strip()
-            if val and val != getattr(config, field):
+            if val:
+                old = getattr(config, field, '')
                 setattr(config, field, val)
                 config_fields.append(field)
+                if val != old:
+                    logger.info(f"ERPNext config: {field} updated '{old}' → '{val}'")
         if config_fields:
             config.save(update_fields=config_fields)
 
-        # 2. Save category account assignments
+        # 2. Save category → ERPNext account assignments
         updated_cats = 0
         for cat in missing_cats:
             account = request.POST.get(f'account_{cat.pk}', '').strip()
@@ -322,8 +325,9 @@ def sync_preflight(request):
                 cat.erpnext_account = account
                 cat.save(update_fields=['erpnext_account'])
                 updated_cats += 1
+                logger.info(f"Category '{cat.name}' ERPNext account set to '{account}'")
 
-        # 3. Warn about still-missing categories (unless user opted to skip)
+        # 3. Warn about still-missing (unless user opted to skip)
         still_missing = [
             c for c in missing_cats
             if not request.POST.get(f'account_{c.pk}', '').strip()
@@ -335,20 +339,20 @@ def sync_preflight(request):
                 f'still have no ERPNext account — their transactions will be skipped.',
             )
 
-        # 4. Dispatch GH Actions workflow
+        # 4. Dispatch GH Actions — DB is already committed above
         ok, err = _dispatch_gh_actions('erpnext_sync.yml')
         if ok:
             messages.success(
                 request,
-                f'DB saved ({updated_cats} categor{"y" if updated_cats == 1 else "ies"} updated). '
-                'ERPNext sync job dispatched to GitHub Actions.',
+                f'Saved ({updated_cats} categor{"y" if updated_cats == 1 else "ies"} updated). '
+                'Sync job dispatched to GitHub Actions.',
             )
             return redirect(reverse('erpnext:sync_job_status'))
         else:
             messages.error(request, f'DB saved but GH dispatch failed: {err}')
             return redirect(reverse('bridge:bulk_operations'))
 
-    # GET — render the form
+    # GET
     ready_count = (
         BankTransaction.objects
         .filter(category__isnull=False, erpnext_synced=False, category__erpnext_account__isnull=False)
@@ -357,9 +361,9 @@ def sync_preflight(request):
         .count()
     )
     return render(request, 'erpnext/sync_preflight.html', {
-        'config': config,
+        'config':       config,
         'missing_cats': missing_cats,
-        'ready_count': ready_count,
+        'ready_count':  ready_count,
     })
 
 
@@ -369,13 +373,12 @@ def sync_job_status(request):
     gh_repo  = os.environ.get('GH_REPO', '')
     return render(request, 'erpnext/sync_job_status.html', {
         'gh_repo': gh_repo,
-        'has_gh': bool(gh_token and gh_repo),
+        'has_gh':  bool(gh_token and gh_repo),
     })
 
 
 @login_required
 def sync_job_status_api(request):
-    """Proxy the GH Actions run list so we don't expose the token to the browser."""
     gh_token = os.environ.get('GH_TOKEN', '')
     gh_repo  = os.environ.get('GH_REPO', '')
     if not gh_token or not gh_repo:
@@ -397,12 +400,12 @@ def sync_job_status_api(request):
             return JsonResponse({'status': 'no_runs'})
         run = runs[0]
         return JsonResponse({
-            'status':      run.get('status'),       # queued / in_progress / completed
-            'conclusion':  run.get('conclusion'),   # success / failure / cancelled / None
-            'run_id':      run.get('id'),
-            'html_url':    run.get('html_url'),
-            'created_at':  run.get('created_at'),
-            'updated_at':  run.get('updated_at'),
+            'status':     run.get('status'),
+            'conclusion': run.get('conclusion'),
+            'run_id':     run.get('id'),
+            'html_url':   run.get('html_url'),
+            'created_at': run.get('created_at'),
+            'updated_at': run.get('updated_at'),
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -410,7 +413,6 @@ def sync_job_status_api(request):
 
 @login_required
 def bulk_sync_post(request):
-    """Direct (non-GH-Actions) sync — kept for backward compat / manual use."""
     config = _active_config(request.user)
     if not config:
         messages.error(request, 'No active ERPNext configuration.')

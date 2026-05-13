@@ -39,38 +39,44 @@
     </div>
 </div>
 
-<!-- ERPNext Settings — always editable, always loaded from live ERPNext -->
+{#
+  IMPORTANT: These selects must NEVER be disabled when the form submits.
+  Disabled inputs are excluded from the POST body — that's why "capitec" was
+  never being overwritten. The selects start with the current saved value so
+  even a slow/failed fetch still submits a valid value.
+#}
 <div class="card mb-4 border-secondary">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-cog"></i> ERPNext Settings</h5>
         <span id="settingsBadge" class="badge bg-light text-secondary">
-            <i class="fas fa-spinner fa-spin"></i> loading…
+            <i class="fas fa-spinner fa-spin"></i> loading live options…
         </span>
     </div>
     <div class="card-body">
         <div id="settingsErrorBanner" class="alert alert-warning d-none">
             <i class="fas fa-exclamation-triangle"></i>
-            Could not load options from ERPNext — showing saved values.
+            Could not load live options — saved values are shown and will be used.
             <button type="button" class="btn btn-sm btn-outline-warning ms-2" onclick="fetchSettings()">Retry</button>
         </div>
         <div class="row g-3">
             <div class="col-md-4">
                 <label class="form-label fw-semibold">Company</label>
-                <select name="config_company" id="configCompanySelect" class="form-select" disabled>
-                    <option value="{{ config.default_company }}">{{ config.default_company|default:"— loading —" }}</option>
+                {# starts with saved value — never disabled #}
+                <select name="config_company" id="configCompanySelect" class="form-select">
+                    <option value="{{ config.default_company }}">{{ config.default_company|default:"— select after loading —" }}</option>
                 </select>
                 <div class="form-text text-muted">Saved: <code>{{ config.default_company|default:"not set" }}</code></div>
             </div>
             <div class="col-md-4">
                 <label class="form-label fw-semibold">Bank Account</label>
-                <select name="config_bank_account" id="configBankSelect" class="form-select" disabled>
-                    <option value="{{ config.bank_account }}">{{ config.bank_account|default:"— loading —" }}</option>
+                <select name="config_bank_account" id="configBankSelect" class="form-select">
+                    <option value="{{ config.bank_account }}">{{ config.bank_account|default:"— select after loading —" }}</option>
                 </select>
                 <div class="form-text text-muted">Saved: <code>{{ config.bank_account|default:"not set" }}</code></div>
             </div>
             <div class="col-md-4">
                 <label class="form-label fw-semibold">Default Cost Center <span class="text-muted fw-normal">(optional)</span></label>
-                <select name="config_cost_center" id="configCostCenterSelect" class="form-select" disabled>
+                <select name="config_cost_center" id="configCostCenterSelect" class="form-select">
                     <option value="{{ config.default_cost_center }}">{{ config.default_cost_center|default:"— none —" }}</option>
                 </select>
                 <div class="form-text text-muted">Saved: <code>{{ config.default_cost_center|default:"not set" }}</code></div>
@@ -99,7 +105,8 @@
         <div class="row g-3 align-items-end">
             <div class="col-md-8">
                 <label class="form-label fw-semibold">Select ERPNext Account</label>
-                <select id="globalAccountSelect" class="form-select" disabled>
+                {# also starts enabled with placeholder #}
+                <select id="globalAccountSelect" class="form-select">
                     <option value="">— fetching accounts from ERPNext… —</option>
                 </select>
             </div>
@@ -119,7 +126,7 @@
 </div>
 {% endif %}
 
-<form method="POST" id="preflightForm" onsubmit="return validateForm()">
+<form method="POST" id="preflightForm">
     {% csrf_token %}
 
     {% if missing_cats %}
@@ -163,11 +170,17 @@
                                 <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
                             </td>
                             <td>
+                                {#
+                                  These selects must NOT be disabled either.
+                                  They start with an empty placeholder; fetchAccounts()
+                                  replaces the options. If the fetch hasn't completed
+                                  yet when the form submits, an empty value is posted
+                                  which the view treats as "leave unchanged".
+                                #}
                                 <select name="account_{{ cat.pk }}"
                                         class="form-select form-select-sm account-select"
                                         data-cat="{{ cat.pk }}"
-                                        data-catname="{{ cat.name }}"
-                                        disabled>
+                                        data-catname="{{ cat.name }}">
                                     <option value="">— loading accounts… —</option>
                                 </select>
                             </td>
@@ -195,12 +208,6 @@
     </div>
     {% endif %}
 
-    <div id="submitValidationError" class="alert alert-danger d-none mb-3">
-        <i class="fas fa-exclamation-triangle"></i>
-        <strong>Cannot sync yet:</strong> accounts could not be loaded from ERPNext.
-        Retry the fetch above, or check "skip" to sync only already-configured categories.
-    </div>
-
     <div class="d-flex gap-2 justify-content-end">
         <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">Cancel</a>
         <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
@@ -214,7 +221,6 @@
 </form>
 
 <script>
-// Saved values from Django context — used to pre-select in dropdowns
 const SAVED = {
     company:     "{{ config.default_company|escapejs }}",
     bankAccount: "{{ config.bank_account|escapejs }}",
@@ -222,9 +228,6 @@ const SAVED = {
 };
 
 let allAccounts = [];
-let fetchSucceeded = false;
-
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 function groupedOptions(accounts, currentVal) {
     const groups = {};
@@ -269,22 +272,20 @@ function globalOptions(accounts) {
     return html;
 }
 
-// ── Settings dropdowns (Company, Bank Account, Cost Center) ────────────────
-
 function fetchSettings() {
-    const badge = document.getElementById('settingsBadge');
+    const badge       = document.getElementById('settingsBadge');
     const errorBanner = document.getElementById('settingsErrorBanner');
-    badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading…';
-    badge.className = 'badge bg-light text-secondary';
+    badge.innerHTML   = '<i class="fas fa-spinner fa-spin"></i> loading…';
+    badge.className   = 'badge bg-light text-secondary';
     errorBanner.classList.add('d-none');
 
     Promise.all([
-        fetch('/erpnext/fetch-companies/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
-        fetch('/erpnext/fetch-accounts/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
+        fetch('/erpnext/fetch-companies/',    { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
+        fetch('/erpnext/fetch-accounts/',     { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
         fetch('/erpnext/fetch-cost-centers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
     ])
     .then(([companyData, accountData, ccData]) => {
-        // Company dropdown
+        // Company
         const companySel = document.getElementById('configCompanySelect');
         if (companyData.success && companyData.companies?.length) {
             let html = '<option value="">— select company —</option>';
@@ -293,26 +294,24 @@ function fetchSettings() {
                 html += `<option value="${c.name}"${sel}>${c.name}</option>`;
             });
             companySel.innerHTML = html;
-            companySel.disabled = false;
         }
 
-        // Bank account dropdown (filter to Asset/Bank type)
+        // Bank account (Asset/Bank accounts only)
         const bankSel = document.getElementById('configBankSelect');
         if (accountData.success && accountData.accounts?.length) {
-            const bankAccounts = accountData.accounts.filter(
+            const pool = accountData.accounts.filter(
                 a => !a.is_group && (a.account_type === 'Bank' || a.root_type === 'Asset')
             );
-            const pool = bankAccounts.length ? bankAccounts : accountData.accounts.filter(a => !a.is_group);
+            const options = pool.length ? pool : accountData.accounts.filter(a => !a.is_group);
             let html = '<option value="">— select bank account —</option>';
-            pool.forEach(a => {
+            options.forEach(a => {
                 const sel = a.name === SAVED.bankAccount ? ' selected' : '';
                 html += `<option value="${a.name}"${sel}>${a.name}</option>`;
             });
             bankSel.innerHTML = html;
-            bankSel.disabled = false;
         }
 
-        // Cost center dropdown
+        // Cost center
         const ccSel = document.getElementById('configCostCenterSelect');
         if (ccData.success && ccData.cost_centers?.length) {
             let html = '<option value="">— none —</option>';
@@ -321,7 +320,6 @@ function fetchSettings() {
                 html += `<option value="${c.name}"${sel}>${c.name}</option>`;
             });
             ccSel.innerHTML = html;
-            ccSel.disabled = false;
         }
 
         badge.innerHTML = '<i class="fas fa-check-circle"></i> loaded';
@@ -331,32 +329,24 @@ function fetchSettings() {
         badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> failed';
         badge.className = 'badge bg-danger';
         errorBanner.classList.remove('d-none');
-        // Re-enable with just the saved value so user isn't blocked
-        ['configCompanySelect', 'configBankSelect', 'configCostCenterSelect'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.disabled = false;
-        });
+        // Selects are already enabled with saved values — form can still submit
     });
 }
 
-// ── Category account dropdowns ─────────────────────────────────────────────
-
 function fetchAccounts() {
-    fetchSucceeded = false;
-    const badge = document.getElementById('fetchBadge');
+    const badge       = document.getElementById('fetchBadge');
     const errorBanner = document.getElementById('fetchErrorBanner');
-    const errorMsg = document.getElementById('fetchErrorMsg');
-    const globalSel = document.getElementById('globalAccountSelect');
-    const applyBtn = document.getElementById('applyAllBtn');
+    const errorMsg    = document.getElementById('fetchErrorMsg');
+    const globalSel   = document.getElementById('globalAccountSelect');
+    const applyBtn    = document.getElementById('applyAllBtn');
 
     if (badge) { badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading…'; badge.className = 'badge bg-light text-primary'; }
     if (errorBanner) errorBanner.classList.add('d-none');
-    if (globalSel) globalSel.disabled = true;
     if (applyBtn) applyBtn.disabled = true;
 
+    // Show loading state in category selects — they remain enabled
     document.querySelectorAll('.account-select').forEach(el => {
         el.innerHTML = '<option value="">— loading… —</option>';
-        el.disabled = true;
     });
 
     fetch('/erpnext/fetch-accounts/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
@@ -364,27 +354,24 @@ function fetchAccounts() {
     .then(data => {
         if (!data.success || !data.accounts?.length) throw new Error(data.message || 'No accounts returned.');
         allAccounts = data.accounts;
-        fetchSucceeded = true;
 
-        if (globalSel) { globalSel.innerHTML = globalOptions(allAccounts); globalSel.disabled = false; }
-        if (applyBtn) applyBtn.disabled = false;
+        if (globalSel) { globalSel.innerHTML = globalOptions(allAccounts); }
+        if (applyBtn)  { applyBtn.disabled = false; }
 
         document.querySelectorAll('.account-select').forEach(el => {
             el.innerHTML = groupedOptions(allAccounts, el.dataset.currentValue || '');
-            el.disabled = false;
         });
 
         if (badge) { badge.innerHTML = `<i class="fas fa-check-circle"></i> ${allAccounts.length} accounts`; badge.className = 'badge bg-success'; }
     })
     .catch(err => {
-        fetchSucceeded = false;
         if (badge) { badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed'; badge.className = 'badge bg-danger'; }
         if (errorBanner) { errorBanner.classList.remove('d-none'); if (errorMsg) errorMsg.textContent = ' ' + (err.message || ''); }
+        // Leave selects enabled with "fetch failed" notice — user can retry or skip
         document.querySelectorAll('.account-select').forEach(el => {
             el.innerHTML = '<option value="">— fetch failed, retry above —</option>';
-            el.disabled = true;
         });
-        if (globalSel) { globalSel.innerHTML = '<option value="">— fetch failed —</option>'; globalSel.disabled = true; }
+        if (globalSel) globalSel.innerHTML = '<option value="">— fetch failed —</option>';
     });
 }
 
@@ -393,7 +380,7 @@ function applyToAll() {
     if (!val) return;
     let filled = 0;
     document.querySelectorAll('.account-select').forEach(el => {
-        if (!el.value && !el.disabled) { el.value = val; filled++; }
+        if (!el.value) { el.value = val; filled++; }
     });
     const fb = document.getElementById('applyFeedback');
     fb.innerHTML = filled > 0
@@ -401,17 +388,6 @@ function applyToAll() {
         : `<div class="alert alert-info py-2 mb-0"><i class="fas fa-info-circle"></i> All fields already filled.</div>`;
     fb.style.display = 'block';
     setTimeout(() => { fb.style.display = 'none'; }, 4000);
-}
-
-function validateForm() {
-    const hasMissingCats = document.querySelectorAll('.account-select').length > 0;
-    const skipMissing = document.getElementById('skipMissing');
-    if (hasMissingCats && !fetchSucceeded && !(skipMissing && skipMissing.checked)) {
-        const errDiv = document.getElementById('submitValidationError');
-        if (errDiv) { errDiv.classList.remove('d-none'); errDiv.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-        return false;
-    }
-    return true;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
