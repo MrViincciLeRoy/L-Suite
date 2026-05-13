@@ -63,21 +63,15 @@ class ERPNextService:
             raise ValueError(f"Transaction {transaction.id} has zero amount, skipping")
 
         if transaction.transaction_type == 'debit':
-            # Money out: debit the expense account, credit the bank
             bank_row = self._account_row(self.config.bank_account, 0, amount)
             expense_row = self._account_row(
-                transaction.category.erpnext_account,
-                amount,
-                0,
+                transaction.category.erpnext_account, amount, 0,
                 self.config.default_cost_center or None,
             )
         else:
-            # Money in: debit the bank, credit the income account
             bank_row = self._account_row(self.config.bank_account, amount, 0)
             expense_row = self._account_row(
-                transaction.category.erpnext_account,
-                0,
-                amount,
+                transaction.category.erpnext_account, 0, amount,
                 self.config.default_cost_center or None,
             )
 
@@ -98,10 +92,7 @@ class ERPNextService:
 
         try:
             response = requests.post(
-                url,
-                headers=self._get_headers(),
-                json=journal_data,
-                timeout=30,
+                url, headers=self._get_headers(), json=journal_data, timeout=30,
             )
             response.raise_for_status()
             journal_entry_name = response.json().get('data', {}).get('name')
@@ -120,7 +111,6 @@ class ERPNextService:
                 erpnext_doc_name=journal_entry_name,
                 status='success',
             )
-
             return journal_entry_name
 
         except requests.exceptions.HTTPError as e:
@@ -132,7 +122,6 @@ class ERPNextService:
             error_message = f"HTTP {e.response.status_code}: {error_body}"
             self._handle_sync_error(transaction, error_message)
             raise Exception(error_message) from e
-
         except Exception as e:
             self._handle_sync_error(transaction, str(e))
             raise
@@ -141,7 +130,6 @@ class ERPNextService:
         logger.error(f"Sync failed: {error_message}")
         transaction.erpnext_error = error_message
         transaction.save()
-
         ERPNextSyncLog.objects.create(
             config=self.config,
             record_type='bank_transaction',
@@ -151,29 +139,59 @@ class ERPNextService:
         )
 
     def get_chart_of_accounts(self):
-        try:
-            url = f"{self.base_url}/api/resource/Account"
+        """
+        Fetch all accounts without a company filter (Frappe filter syntax varies by version).
+        We fetch all leaf accounts and optionally filter client-side by company.
+        """
+        url = f"{self.base_url}/api/resource/Account"
+        all_accounts = []
+        page_start = 0
+        page_length = 500
+
+        while True:
             params = {
-                'fields': '["name", "account_type", "is_group"]',
-                'filters': f'[["company", "=", "{self.config.default_company}"]]',
-                'limit_page_length': 1000,
+                'fields': '["name","account_name","account_type","root_type","is_group","company"]',
+                'limit_start': page_start,
+                'limit_page_length': page_length,
             }
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
-            response.raise_for_status()
-            return response.json().get('data', [])
-        except Exception as e:
-            logger.error(f"Failed to fetch accounts: {e}")
-            return []
+            try:
+                response = requests.get(
+                    url, headers=self._get_headers(), params=params, timeout=30,
+                )
+                response.raise_for_status()
+                batch = response.json().get('data', [])
+            except Exception as e:
+                logger.error(f"Failed to fetch accounts (offset={page_start}): {e}")
+                break
+
+            if not batch:
+                break
+
+            all_accounts.extend(batch)
+
+            if len(batch) < page_length:
+                break
+            page_start += page_length
+
+        # Filter to the configured company if we got results with company info
+        company = (self.config.default_company or '').strip()
+        if company and all_accounts and all_accounts[0].get('company') is not None:
+            filtered = [a for a in all_accounts if a.get('company') == company]
+            # Fall back to all if filter yields nothing (company name mismatch)
+            all_accounts = filtered if filtered else all_accounts
+
+        return all_accounts
 
     def get_cost_centers(self):
+        url = f"{self.base_url}/api/resource/Cost Center"
+        params = {
+            'fields': '["name","cost_center_name","company"]',
+            'limit_page_length': 500,
+        }
         try:
-            url = f"{self.base_url}/api/resource/Cost Center"
-            params = {
-                'fields': '["name", "cost_center_name"]',
-                'filters': f'[["company", "=", "{self.config.default_company}"]]',
-                'limit_page_length': 1000,
-            }
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
+            response = requests.get(
+                url, headers=self._get_headers(), params=params, timeout=30,
+            )
             response.raise_for_status()
             return response.json().get('data', [])
         except Exception as e:

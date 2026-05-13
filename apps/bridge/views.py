@@ -1,3 +1,8 @@
+import json
+import logging
+import os
+
+import requests as http_requests
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
@@ -5,10 +10,6 @@ from django.db.models import Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-
-import json
-import os
-import requests as http_requests
 
 from apps.main.models import (
     BankTransaction,
@@ -25,6 +26,8 @@ from .services import (
     _get_junk_category_ids,
     _needs_categorization_qs,
 )
+
+logger = logging.getLogger(__name__)
 
 ITEMS_PER_PAGE = 20
 
@@ -81,7 +84,7 @@ def _handle_bulk_sync_result(request, success, failed, total):
 
 
 # ---------------------------------------------------------------------------
-# ERPNext Config views (kept in erpnext/views.py ? these are bridge overrides)
+# ERPNext Config views
 # ---------------------------------------------------------------------------
 
 @login_required
@@ -212,16 +215,16 @@ def sync_transaction(request, pk):
 
 @login_required
 def fetch_accounts(request):
-    """
-    Returns a sorted list of ERPNext leaf account names for use in dropdowns.
-    Response: { success: bool, accounts: [{name, account_type, root_type, company}], count: int }
-    """
     config, err = _active_config_or_error(user=request.user)
     if err:
         return err
     try:
         raw = ERPNextService(config).get_chart_of_accounts()
-        # Sort: group by root_type so income/expense accounts appear naturally ordered
+        if not raw:
+            return JsonResponse(
+                {'success': False, 'message': 'No accounts returned from ERPNext. Check company name and API permissions.'},
+                status=502,
+            )
         accounts = sorted(
             [
                 {
@@ -591,7 +594,6 @@ def sync_preflight(request):
         'config': config,
         'missing_cats': missing_cats,
         'ready_count': ready_count,
-        # accounts no longer passed from view ? fetched client-side via /erpnext/fetch-accounts/
     })
 
 
@@ -607,7 +609,3 @@ def bulk_sync_post(request):
     except Exception as e:
         messages.error(request, f'Sync error: {e}')
     return redirect(reverse('bridge:bulk_operations'))
-
-
-import logging
-logger = logging.getLogger(__name__)
