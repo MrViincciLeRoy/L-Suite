@@ -1,304 +1,237 @@
-{% extends "base.html" %}
-{% block title %}Sync Preflight - LSuite{% endblock %}
+import json
+import logging
 
-{% block content %}
-<div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i class="fas fa-cloud-upload-alt"></i> Sync Preflight</h1>
-    <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">
-        <i class="fas fa-arrow-left"></i> Back
-    </a>
-</div>
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
-<!-- Summary bar -->
-<div class="row mb-4">
-    <div class="col-md-4 mb-3">
-        <div class="card border-success h-100">
-            <div class="card-body">
-                <h6 class="text-muted small">Ready to Sync Now</h6>
-                <h3 class="mb-0 text-success">{{ ready_count }}</h3>
-                <small class="text-muted">transactions already have accounts</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-3">
-        <div class="card border-warning h-100">
-            <div class="card-body">
-                <h6 class="text-muted small">Categories Needing Account</h6>
-                <h3 class="mb-0 text-warning">{{ missing_cats|length }}</h3>
-                <small class="text-muted">assign below to include them</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-3">
-        <div class="card border-info h-100">
-            <div class="card-body">
-                <h6 class="text-muted small">ERPNext Config</h6>
-                <p class="mb-0 fw-semibold mt-2">{{ config.name }}</p>
-                <small class="text-muted">{{ config.base_url }}</small>
-            </div>
-        </div>
-    </div>
-</div>
+from apps.main.models import ERPNextConfig, ERPNextSyncLog, BankTransaction
+from .services import ERPNextService
 
-{% if missing_cats %}
-<!-- Global account fetcher -->
-<div class="card mb-4 border-primary">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
-        <span id="fetchBadge" class="badge bg-light text-primary">
-            <i class="fas fa-spinner fa-spin"></i> loading…
-        </span>
-    </div>
-    <div class="card-body">
-        <div class="row g-3 align-items-end">
-            <div class="col-md-8">
-                <label class="form-label fw-semibold">Select ERPNext Account</label>
-                <select id="globalAccountSelect" class="form-select" disabled>
-                    <option value="">— fetching accounts from ERPNext… —</option>
-                </select>
-                <div id="fetchError" class="text-danger small mt-1" style="display:none;"></div>
-            </div>
-            <div class="col-md-4 d-flex gap-2">
-                <button type="button" class="btn btn-primary w-100" id="applyAllBtn"
-                        disabled onclick="applyToAll()">
-                    <i class="fas fa-fill-drip"></i> Prefill All Empty
-                </button>
-                <button type="button" class="btn btn-outline-secondary flex-shrink-0"
-                        onclick="fetchAccounts()" title="Retry fetch">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            </div>
-        </div>
-        <div id="applyFeedback" class="mt-2" style="display:none;"></div>
-    </div>
-</div>
-{% endif %}
+logger = logging.getLogger(__name__)
 
-<form method="POST" id="preflightForm">
-    {% csrf_token %}
 
-    {% if missing_cats %}
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-exclamation-circle text-warning"></i>
-                Categories Missing ERPNext Account
-            </h5>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-warning">
-                        <tr>
-                            <th>Category</th>
-                            <th>Type</th>
-                            <th class="text-center">Pending Txns</th>
-                            <th style="min-width:320px;">ERPNext Account</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for cat in missing_cats %}
-                        <tr>
-                            <td>
-                                <strong>{{ cat.name }}</strong>
-                                {% if cat.keywords %}
-                                <br><small class="text-muted">{{ cat.keywords|truncatechars:60 }}</small>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if cat.transaction_type == 'debit' %}
-                                    <span class="badge bg-danger">Expense</span>
-                                {% elif cat.transaction_type == 'credit' %}
-                                    <span class="badge bg-success">Income</span>
-                                {% else %}
-                                    <span class="badge bg-info">Transfer</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
-                            </td>
-                            <td>
-                                <select name="account_{{ cat.pk }}"
-                                        class="form-select form-select-sm account-select"
-                                        data-cat="{{ cat.pk }}"
-                                        disabled>
-                                    <option value="">— loading… —</option>
-                                </select>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        <div class="card-footer">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="skip_missing"
-                       id="skipMissing" value="1">
-                <label class="form-check-label text-muted small" for="skipMissing">
-                    Don't warn me about unassigned categories — just sync what's ready
-                </label>
-            </div>
-        </div>
-    </div>
-    {% else %}
-    <div class="alert alert-success">
-        <i class="fas fa-check-circle"></i>
-        <strong>All categories have ERPNext accounts assigned.</strong>
-        Ready to sync {{ ready_count }} transaction{{ ready_count|pluralize }}.
-    </div>
-    {% endif %}
+def _active_config(user):
+    return ERPNextConfig.objects.filter(user=user, is_active=True).first()
 
-    <div class="d-flex gap-2 justify-content-end">
-        <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
-            <i class="fas fa-cloud-upload-alt"></i>
-            Save Accounts &amp; Sync
-            {% if ready_count %}
-            ({{ ready_count }} ready{% if missing_cats %} + up to {{ missing_cats|length }} more{% endif %})
-            {% endif %}
-        </button>
-    </div>
-</form>
 
-<script>
-let allAccounts = [];
+@login_required
+def configs(request):
+    configs = ERPNextConfig.objects.filter(user=request.user)
+    return render(request, 'erpnext/configs.html', {'configs': configs})
 
-function groupedOptions(accounts, currentVal) {
-    // Group by root_type: Asset, Liability, Income, Expense, Equity
-    const groups = {};
-    accounts.forEach(a => {
-        const g = a.root_type || 'Other';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(a);
-    });
 
-    let html = '<option value="">— skip this category —</option>';
-    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
-    order.forEach(gName => {
-        if (!groups[gName]) return;
-        html += `<optgroup label="${gName}">`;
-        groups[gName].forEach(a => {
-            const sel = a.name === currentVal ? ' selected' : '';
-            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
-            html += `<option value="${a.name}"${sel}>${label}</option>`;
-        });
-        html += '</optgroup>';
-    });
-    return html;
-}
+@login_required
+def new_config(request):
+    if request.method == 'POST':
+        config = ERPNextConfig(
+            user=request.user,
+            name=request.POST['name'],
+            base_url=request.POST['base_url'],
+            api_key=request.POST['api_key'],
+            api_secret=request.POST['api_secret'],
+            default_company=request.POST.get('default_company', ''),
+            bank_account=request.POST.get('bank_account', ''),
+            default_cost_center=request.POST.get('default_cost_center', ''),
+            is_active='is_active' in request.POST,
+        )
+        service = ERPNextService(config)
+        success, message = service.test_connection()
+        if not success:
+            messages.error(request, f'Connection test failed: {message}')
+            return render(request, 'erpnext/config_form.html', {'config': config})
+        config.save()
+        messages.success(request, f'Configuration created! {message}')
+        return redirect(reverse('erpnext:configs'))
+    return render(request, 'erpnext/config_form.html')
 
-function globalOptions(accounts) {
-    let html = '<option value="">— pick an account to prefill all —</option>';
-    const groups = {};
-    accounts.forEach(a => {
-        const g = a.root_type || 'Other';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(a);
-    });
-    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
-    order.forEach(gName => {
-        if (!groups[gName]) return;
-        html += `<optgroup label="${gName}">`;
-        groups[gName].forEach(a => {
-            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
-            html += `<option value="${a.name}">${label}</option>`;
-        });
-        html += '</optgroup>';
-    });
-    return html;
-}
 
-function fetchAccounts() {
-    const badge = document.getElementById('fetchBadge');
-    const errDiv = document.getElementById('fetchError');
-    const globalSel = document.getElementById('globalAccountSelect');
-    const applyBtn = document.getElementById('applyAllBtn');
+@login_required
+def edit_config(request, pk):
+    config = get_object_or_404(ERPNextConfig, pk=pk, user=request.user)
+    if request.method == 'POST':
+        config.name                = request.POST['name']
+        config.base_url            = request.POST['base_url']
+        config.api_key             = request.POST['api_key']
+        config.api_secret          = request.POST['api_secret']
+        config.default_company     = request.POST.get('default_company', '')
+        config.bank_account        = request.POST.get('bank_account', '')
+        config.default_cost_center = request.POST.get('default_cost_center', '')
+        config.is_active           = 'is_active' in request.POST
 
-    if (badge) {
-        badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading…';
-        badge.className = 'badge bg-light text-primary';
-    }
-    if (errDiv) errDiv.style.display = 'none';
-    if (globalSel) globalSel.disabled = true;
-    if (applyBtn) applyBtn.disabled = true;
+        service = ERPNextService(config)
+        success, message = service.test_connection()
+        if not success:
+            messages.warning(request, f'Connection test failed: {message}')
 
-    fetch('/erpnext/fetch-accounts/', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        config.save()
+        messages.success(request, 'Configuration updated!')
+        return redirect(reverse('erpnext:configs'))
+    return render(request, 'erpnext/config_form.html', {'config': config})
+
+
+@login_required
+def delete_config(request, pk):
+    config = get_object_or_404(ERPNextConfig, pk=pk, user=request.user)
+    if request.method == 'POST':
+        config.delete()
+        messages.success(request, 'Configuration deleted.')
+    return redirect(reverse('erpnext:configs'))
+
+
+@login_required
+def test_config(request, pk):
+    config = get_object_or_404(ERPNextConfig, pk=pk, user=request.user)
+    service = ERPNextService(config)
+    success, message = service.test_connection()
+    return JsonResponse({'success': success, 'message': message})
+
+
+@login_required
+def activate_config(request, pk):
+    config = get_object_or_404(ERPNextConfig, pk=pk, user=request.user)
+    if request.method == 'POST':
+        ERPNextConfig.objects.filter(user=request.user).update(is_active=False)
+        config.is_active = True
+        config.save()
+        messages.success(request, f'"{config.name}" is now active.')
+    return redirect(reverse('erpnext:configs'))
+
+
+@login_required
+def sync_logs(request):
+    logs_qs = ERPNextSyncLog.objects.filter(
+        config__user=request.user
+    ).select_related('config').order_by('-sync_date')
+    paginator = Paginator(logs_qs, 50)
+    page = paginator.get_page(request.GET.get('page', 1))
+    return render(request, 'erpnext/sync_logs.html', {'logs': page})
+
+
+@login_required
+def sync_transaction(request, pk):
+    transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
+    if not transaction.category_id:
+        return JsonResponse(
+            {'success': False, 'message': 'Transaction must be categorized first'}, status=400,
+        )
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+    try:
+        service = ERPNextService(config)
+        journal_entry_name = service.create_journal_entry(transaction)
+        return JsonResponse({
+            'success': True,
+            'message': f'Synced: {journal_entry_name}',
+            'journal_entry': journal_entry_name,
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+def fetch_accounts(request):
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+    try:
+        raw = ERPNextService(config).get_chart_of_accounts()
+        if not raw:
+            return JsonResponse(
+                {'success': False, 'message': 'No accounts returned. Check company name and API permissions.'},
+                status=502,
+            )
+        accounts = sorted(
+            [{
+                'name': a['name'],
+                'account_name': a.get('account_name') or a['name'],
+                'account_type': a.get('account_type', ''),
+                'root_type': a.get('root_type', ''),
+                'company': a.get('company', ''),
+                'is_group': bool(a.get('is_group')),
+            } for a in raw],
+            key=lambda x: (x['root_type'], x['name']),
+        )
+        return JsonResponse({'success': True, 'accounts': accounts, 'count': len(accounts)})
+    except Exception as e:
+        logger.error(f"fetch_accounts error: {e}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+def fetch_cost_centers(request):
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+    try:
+        cost_centers = ERPNextService(config).get_cost_centers()
+        return JsonResponse({'success': True, 'cost_centers': cost_centers})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+def fetch_companies(request):
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+    try:
+        companies = ERPNextService(config).get_companies()
+        return JsonResponse({'success': True, 'companies': companies})
+    except Exception as e:
+        logger.error(f"fetch_companies error: {e}")
+        return JsonResponse({'success': False, 'message': str(e)}, status=500)
+
+
+@login_required
+def update_config_defaults(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'POST required'}, status=405)
+
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'success': False, 'message': 'Invalid JSON'}, status=400)
+
+    company     = body.get('company', '').strip()
+    bank        = body.get('bank_account', '').strip()
+    cost_center = body.get('cost_center', '').strip()
+
+    if not company:
+        return JsonResponse({'success': False, 'message': 'Company is required'}, status=400)
+    if not bank:
+        return JsonResponse({'success': False, 'message': 'Bank account is required'}, status=400)
+
+    # Resolve company abbreviation to full name before saving
+    service = ERPNextService(config)
+    companies = service.get_companies()
+    resolved_company = company
+    for c in companies:
+        if c.get('name') == company:
+            resolved_company = company
+            break
+        if c.get('abbr', '').strip().upper() == company.upper():
+            resolved_company = c['name']
+            logger.info(f"Resolved company abbreviation '{company}' -> '{resolved_company}'")
+            break
+
+    config.default_company     = resolved_company
+    config.bank_account        = bank
+    config.default_cost_center = cost_center
+    config.save(update_fields=['default_company', 'bank_account', 'default_cost_center'])
+
+    note = f" (resolved from '{company}')" if resolved_company != company else ""
+    logger.info(f"Config {config.id} defaults updated: company={resolved_company!r}{note} bank={bank!r}")
+    return JsonResponse({
+        'success': True,
+        'message': f'Defaults saved. Company: {resolved_company}{note}',
+        'resolved_company': resolved_company,
     })
-    .then(r => r.json())
-    .then(data => {
-        if (!data.success || !data.accounts || data.accounts.length === 0) {
-            throw new Error(data.message || 'No accounts returned from ERPNext.');
-        }
-
-        allAccounts = data.accounts;
-
-        // Populate global selector
-        if (globalSel) {
-            globalSel.innerHTML = globalOptions(allAccounts);
-            globalSel.disabled = false;
-        }
-        if (applyBtn) applyBtn.disabled = false;
-
-        // Populate each per-category select
-        document.querySelectorAll('.account-select').forEach(el => {
-            const cur = el.value;
-            el.innerHTML = groupedOptions(allAccounts, cur);
-            el.disabled = false;
-        });
-
-        if (badge) {
-            badge.innerHTML = `<i class="fas fa-check-circle"></i> ${allAccounts.length} accounts`;
-            badge.className = 'badge bg-success';
-        }
-    })
-    .catch(err => {
-        const msg = err.message || 'Unknown error';
-        if (badge) {
-            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
-            badge.className = 'badge bg-danger';
-        }
-        if (errDiv) {
-            errDiv.textContent = `Could not fetch accounts: ${msg}. Click ↻ to retry.`;
-            errDiv.style.display = 'block';
-        }
-        // fallback: convert selects to text inputs
-        document.querySelectorAll('.account-select').forEach(el => {
-            const inp = document.createElement('input');
-            inp.type = 'text';
-            inp.name = el.name;
-            inp.className = 'form-control form-control-sm account-select';
-            inp.dataset.cat = el.dataset.cat;
-            inp.placeholder = 'e.g. Bank Charges - DNL';
-            el.replaceWith(inp);
-        });
-        if (globalSel) {
-            globalSel.innerHTML = '<option value="">— fetch failed —</option>';
-        }
-    });
-}
-
-function applyToAll() {
-    const val = document.getElementById('globalAccountSelect').value;
-    if (!val) return;
-
-    let filled = 0;
-    document.querySelectorAll('.account-select').forEach(el => {
-        if (!el.value) {
-            el.value = val;
-            filled++;
-        }
-    });
-
-    const fb = document.getElementById('applyFeedback');
-    fb.innerHTML = filled > 0
-        ? `<div class="alert alert-success py-2 mb-0"><i class="fas fa-check"></i> Prefilled <strong>${filled}</strong> empty field${filled !== 1 ? 's' : ''} with <em>${val}</em>.</div>`
-        : `<div class="alert alert-info py-2 mb-0"><i class="fas fa-info-circle"></i> All fields already filled. Clear them first to override.</div>`;
-    fb.style.display = 'block';
-    setTimeout(() => { fb.style.display = 'none'; }, 4000);
-}
-
-document.addEventListener('DOMContentLoaded', fetchAccounts);
-</script>
-{% endblock %}

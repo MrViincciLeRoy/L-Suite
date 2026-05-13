@@ -10,6 +10,7 @@ class ERPNextService:
     def __init__(self, config):
         self.config = config
         self.base_url = config.base_url.rstrip('/')
+        self._resolved_company = None
 
     def _get_headers(self):
         return {
@@ -35,6 +36,61 @@ class ERPNextService:
             return False, f"HTTP {e.response.status_code}: {e.response.text}"
         except Exception as e:
             return False, str(e)
+
+    def _resolve_company_name(self):
+        """
+        ERPNext requires the full company *name* (not the abbreviation).
+        If default_company looks like an abbreviation (short, all-caps, no spaces),
+        try to match it against the companies list and return the full name.
+        Caches the result for the lifetime of this service instance.
+        """
+        if self._resolved_company:
+            return self._resolved_company
+
+        stored = (self.config.default_company or '').strip()
+        if not stored:
+            raise ValueError("No company configured. Set default_company in your ERPNext config.")
+
+        companies = self.get_companies()
+        if not companies:
+            self._resolved_company = stored
+            return stored
+
+        # Exact name match first
+        for c in companies:
+            if c.get('name', '') == stored:
+                self._resolved_company = stored
+                return stored
+
+        # Abbreviation match (case-insensitive)
+        for c in companies:
+            if c.get('abbr', '').strip().upper() == stored.upper():
+                full_name = c['name']
+                logger.warning(
+                    f"Resolved company abbreviation '{stored}' -> '{full_name}'. "
+                    "Update your ERPNext config to use the full company name."
+                )
+                self._resolved_company = full_name
+                return full_name
+
+        # Partial name match fallback
+        stored_lower = stored.lower()
+        for c in companies:
+            if stored_lower in c.get('name', '').lower():
+                full_name = c['name']
+                logger.warning(
+                    f"Partial company match '{stored}' -> '{full_name}'. "
+                    "Update your ERPNext config to use the exact company name."
+                )
+                self._resolved_company = full_name
+                return full_name
+
+        logger.error(
+            f"Could not resolve company '{stored}'. "
+            f"Available: {[c.get('name') for c in companies]}"
+        )
+        self._resolved_company = stored
+        return stored
 
     def _account_row(self, account, debit, credit, cost_center=None):
         row = {
@@ -66,24 +122,43 @@ class ERPNextService:
             return abs(amount)
         return 0.0
 
+    def _validate_account_name(self, account_name):
+        """
+        Lightweight sanity check: ERPNext account names usually contain ' - '
+        and the company abbreviation, e.g. 'Bank Charges - V'.
+        A bare single-word lowercase name like 'capitec' is almost certainly wrong.
+        """
+        if not account_name:
+            return False, "Account name is empty."
+        stripped = account_name.strip()
+        if ' ' not in stripped and stripped == stripped.lower():
+            return False, (
+                f"'{stripped}' doesn't look like a valid ERPNext account name. "
+                "ERPNext accounts typically look like 'Account Name - CompanyAbbr'."
+            )
+        return True, ""
+
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
             raise ValueError("Transaction must be categorized before syncing")
-        if not transaction.category.erpnext_account:
+
+        erpnext_account = (transaction.category.erpnext_account or '').strip()
+        if not erpnext_account:
             raise ValueError(
                 f"Category '{transaction.category.name}' has no ERPNext account configured"
             )
 
+        valid, reason = self._validate_account_name(erpnext_account)
+        if not valid:
+            raise ValueError(
+                f"Category '{transaction.category.name}' has an invalid ERPNext account: {reason}"
+            )
+
+        company = self._resolve_company_name()
         posting_date = transaction.date.strftime('%Y-%m-%d')
         amount = self._extract_amount(transaction)
 
         if amount == 0.0:
-            logger.warning(
-                f"Transaction {transaction.id} ({transaction.description!r}) zero amount ? "
-                f"withdrawal={getattr(transaction,'withdrawal',None)!r} "
-                f"deposit={getattr(transaction,'deposit',None)!r} "
-                f"amount={getattr(transaction,'amount',None)!r}"
-            )
             raise ValueError(
                 f"Transaction {transaction.id} has zero amount ? "
                 "check withdrawal/deposit/amount fields in the database"
@@ -92,20 +167,20 @@ class ERPNextService:
         if transaction.transaction_type == 'debit':
             bank_row    = self._account_row(self.config.bank_account, 0, amount)
             expense_row = self._account_row(
-                transaction.category.erpnext_account, amount, 0,
+                erpnext_account, amount, 0,
                 self.config.default_cost_center or None,
             )
         else:
             bank_row    = self._account_row(self.config.bank_account, amount, 0)
             expense_row = self._account_row(
-                transaction.category.erpnext_account, 0, amount,
+                erpnext_account, 0, amount,
                 self.config.default_cost_center or None,
             )
 
         journal_data = {
             "doctype": "Journal Entry",
             "voucher_type": "Journal Entry",
-            "company": self.config.default_company,
+            "company": company,
             "posting_date": posting_date,
             "accounts": [bank_row, expense_row],
             "user_remark": transaction.description or "",
@@ -212,7 +287,17 @@ class ERPNextService:
 
         company = (self.config.default_company or '').strip()
         if company and all_accounts and all_accounts[0].get('company') is not None:
-            filtered     = [a for a in all_accounts if a.get('company') == company]
+            filtered = [a for a in all_accounts if a.get('company') == company]
+            # If nothing matched by full name, try abbreviation
+            if not filtered:
+                companies = self.get_companies()
+                resolved = company
+                for c in companies:
+                    if c.get('abbr', '').strip().upper() == company.upper():
+                        resolved = c['name']
+                        break
+                if resolved != company:
+                    filtered = [a for a in all_accounts if a.get('company') == resolved]
             all_accounts = filtered if filtered else all_accounts
 
         return all_accounts

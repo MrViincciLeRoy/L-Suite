@@ -210,10 +210,28 @@ def update_config_defaults(request):
     if not bank:
         return JsonResponse({'success': False, 'message': 'Bank account is required'}, status=400)
 
-    config.default_company     = company
+    # Resolve company abbreviation to full name before saving
+    service = ERPNextService(config)
+    companies = service.get_companies()
+    resolved_company = company
+    for c in companies:
+        if c.get('name') == company:
+            resolved_company = company
+            break
+        if c.get('abbr', '').strip().upper() == company.upper():
+            resolved_company = c['name']
+            logger.info(f"Resolved company abbreviation '{company}' -> '{resolved_company}'")
+            break
+
+    config.default_company     = resolved_company
     config.bank_account        = bank
     config.default_cost_center = cost_center
     config.save(update_fields=['default_company', 'bank_account', 'default_cost_center'])
 
-    logger.info(f"Config {config.id} defaults updated: company={company!r} bank={bank!r} cc={cost_center!r}")
-    return JsonResponse({'success': True, 'message': 'Defaults saved.'})
+    note = f" (resolved from '{company}')" if resolved_company != company else ""
+    logger.info(f"Config {config.id} defaults updated: company={resolved_company!r}{note} bank={bank!r}")
+    return JsonResponse({
+        'success': True,
+        'message': f'Defaults saved. Company: {resolved_company}{note}',
+        'resolved_company': resolved_company,
+    })
