@@ -5,10 +5,10 @@ from apps.main.models import ERPNextSyncLog
 
 logger = logging.getLogger(__name__)
 
+
 class ERPNextService:
     def __init__(self, config):
         self.config = config
-        # Fix for double slash: ensure base_url has no trailing slash
         self.base_url = config.base_url.rstrip('/')
 
     def _get_headers(self):
@@ -16,8 +16,6 @@ class ERPNextService:
             'Authorization': f'token {self.config.api_key}:{self.config.api_secret}',
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            # Fix for 417 Expectation Failed: disable 100-continue handshake
-            'Expect': '', 
         }
 
     def test_connection(self):
@@ -38,45 +36,73 @@ class ERPNextService:
         except Exception as e:
             return False, str(e)
 
+    def _account_row(self, account, debit, credit, cost_center=None):
+        row = {
+            "doctype": "Journal Entry Account",
+            "account": account,
+            "debit_in_account_currency": debit,
+            "credit_in_account_currency": credit,
+        }
+        if cost_center:
+            row["cost_center"] = cost_center
+        return row
+
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
             raise ValueError("Transaction must be categorized before syncing")
 
+        if not transaction.category.erpnext_account:
+            raise ValueError(
+                f"Category '{transaction.category.name}' has no ERPNext account configured"
+            )
+
         posting_date = transaction.date.strftime('%Y-%m-%d')
         amount = abs(float(transaction.withdrawal or 0) or float(transaction.deposit or 0))
 
+        if amount == 0:
+            raise ValueError(f"Transaction {transaction.id} has zero amount, skipping")
+
         if transaction.transaction_type == 'debit':
-            bank_credit, bank_debit = amount, 0
-            expense_credit, expense_debit = 0, amount
+            # Money out: debit the expense account, credit the bank
+            bank_row = self._account_row(self.config.bank_account, 0, amount)
+            expense_row = self._account_row(
+                transaction.category.erpnext_account,
+                amount,
+                0,
+                self.config.default_cost_center or None,
+            )
         else:
-            bank_credit, bank_debit = 0, amount
-            expense_credit, expense_debit = amount, 0
+            # Money in: debit the bank, credit the income account
+            bank_row = self._account_row(self.config.bank_account, amount, 0)
+            expense_row = self._account_row(
+                transaction.category.erpnext_account,
+                0,
+                amount,
+                self.config.default_cost_center or None,
+            )
 
         journal_data = {
-            'doctype': 'Journal Entry',
-            'company': self.config.default_company,
-            'posting_date': posting_date,
-            'accounts': [
-                {
-                    'account': self.config.bank_account,
-                    'debit_in_account_currency': bank_debit,
-                    'credit_in_account_currency': bank_credit,
-                },
-                {
-                    'account': transaction.category.erpnext_account,
-                    'debit_in_account_currency': expense_debit,
-                    'credit_in_account_currency': expense_credit,
-                    'cost_center': self.config.default_cost_center or None,
-                },
-            ],
-            'user_remark': transaction.description or '',
-            'reference_number': transaction.reference_number or '',
+            "doctype": "Journal Entry",
+            "voucher_type": "Journal Entry",
+            "company": self.config.default_company,
+            "posting_date": posting_date,
+            "accounts": [bank_row, expense_row],
+            "user_remark": transaction.description or "",
         }
+
+        if transaction.reference_number:
+            journal_data["cheque_no"] = transaction.reference_number
+            journal_data["cheque_date"] = posting_date
 
         url = f"{self.base_url}/api/resource/Journal Entry"
 
         try:
-            response = requests.post(url, headers=self._get_headers(), json=journal_data, timeout=30)
+            response = requests.post(
+                url,
+                headers=self._get_headers(),
+                json=journal_data,
+                timeout=30,
+            )
             response.raise_for_status()
             journal_entry_name = response.json().get('data', {}).get('name')
 
@@ -96,6 +122,16 @@ class ERPNextService:
             )
 
             return journal_entry_name
+
+        except requests.exceptions.HTTPError as e:
+            error_body = ''
+            try:
+                error_body = e.response.json().get('exception', e.response.text[:500])
+            except Exception:
+                error_body = e.response.text[:500]
+            error_message = f"HTTP {e.response.status_code}: {error_body}"
+            self._handle_sync_error(transaction, error_message)
+            raise Exception(error_message) from e
 
         except Exception as e:
             self._handle_sync_error(transaction, str(e))

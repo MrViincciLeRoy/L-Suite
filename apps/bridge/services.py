@@ -280,7 +280,6 @@ class CategorizationService:
         ai_count = 0
         no_match = []
 
-        # pass 1: DB keyword/tag match
         for txn in transactions:
             cat = self._find_matching_category(txn, good_categories)
             if cat:
@@ -290,7 +289,6 @@ class CategorizationService:
             else:
                 no_match.append(txn)
 
-        # pass 2: BUILTIN_CLUES fallback — works even without seed_categories
         still_no_match = []
         for txn in no_match:
             desc_lower = (txn.description or "").lower()
@@ -316,7 +314,6 @@ class CategorizationService:
                 txn.category = cat
                 txn.save()
                 keyword_count += 1
-                # refresh good_categories so later txns benefit immediately
                 if matched_cat_name.lower() not in category_name_map:
                     category_name_map[matched_cat_name.lower()] = cat
                     good_categories.append(cat)
@@ -324,10 +321,7 @@ class CategorizationService:
                 still_no_match.append(txn)
         no_match = still_no_match
 
-        # pass 3: zero-shot for anything still unmatched
         if no_match and _hf_client:
-            candidate_labels = [c.name for c in good_categories] or list(set(BUILTIN_CLUES.values()))
-
             for txn in no_match:
                 desc = txn.description or ""
                 result = classify_transaction(desc)
@@ -377,7 +371,6 @@ class CategorizationService:
                 )
                 matches.append({'transaction': transaction, 'category': category, 'keyword': matched_keyword})
             else:
-                # also check BUILTIN_CLUES in preview
                 desc_lower = (transaction.description or "").lower()
                 clue_hit = next(
                     ((clue, cat_name) for clue, cat_name in BUILTIN_CLUES.items() if clue in desc_lower),
@@ -412,7 +405,6 @@ class CategorizationService:
         if db_match:
             return db_match
 
-        # BUILTIN_CLUES fallback
         desc_lower = description.lower()
         for clue, cat_name in BUILTIN_CLUES.items():
             if clue in desc_lower:
@@ -437,12 +429,22 @@ class BulkSyncService:
         return BankTransaction.objects.filter(
             category__isnull=False,
             erpnext_synced=False,
-        ).exclude(category_id__in=junk_ids)
+        ).exclude(category_id__in=junk_ids).select_related('category')
 
     def sync_all_ready(self):
         ready = list(self._syncable_qs())
         if not ready:
             return 0, 0, 0
+
+        # Filter out transactions whose category has no erpnext_account set
+        skipped = [t for t in ready if not t.category.erpnext_account]
+        ready = [t for t in ready if t.category.erpnext_account]
+
+        if skipped:
+            logger.warning(
+                f"Skipping {len(skipped)} transactions — category missing erpnext_account: "
+                + ", ".join(f"#{t.id} ({t.category.name})" for t in skipped[:5])
+            )
 
         success_count, failed_count = 0, 0
         for transaction in ready:
@@ -453,10 +455,14 @@ class BulkSyncService:
                 failed_count += 1
                 logger.error(f"Failed to sync transaction {transaction.id}: {e}")
 
-        return success_count, failed_count, len(ready)
+        return success_count, failed_count, len(ready) + len(skipped)
 
     def sync_by_category(self, category_id):
-        transactions = list(BankTransaction.objects.filter(category_id=category_id, erpnext_synced=False))
+        transactions = list(
+            BankTransaction.objects.filter(
+                category_id=category_id, erpnext_synced=False
+            ).select_related('category')
+        )
         success_count, failed_count = 0, 0
         for transaction in transactions:
             try:
@@ -474,7 +480,7 @@ class BulkSyncService:
             erpnext_synced=False,
             date__gte=start_date,
             date__lte=end_date,
-        ).exclude(category_id__in=junk_ids))
+        ).exclude(category_id__in=junk_ids).select_related('category'))
         success_count, failed_count = 0, 0
         for transaction in transactions:
             try:
