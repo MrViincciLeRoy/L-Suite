@@ -9,7 +9,6 @@
     </a>
 </div>
 
-<!-- Summary bar -->
 <div class="row mb-4">
     <div class="col-md-4 mb-3">
         <div class="card border-success h-100">
@@ -40,7 +39,6 @@
     </div>
 </div>
 
-<!-- ERPNext Settings (always shown, always editable) -->
 <div class="card mb-4 border-secondary">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-cog"></i> ERPNext Settings</h5>
@@ -79,7 +77,7 @@
     </div>
 </div>
 
-
+{% if missing_cats %}
 <div class="card mb-4 border-primary">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
