@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 from . import views
 
 app_name = 'bridge'
@@ -16,11 +17,11 @@ urlpatterns = [
     path('bulk-operations/preview-categorization/', views.preview_categorization, name='preview_categorization'),
     path('bulk-operations/sync-to-erpnext/', views.bulk_sync, name='bulk_sync'),
 
-    # Preflight: assign ERPNext accounts to cats before syncing
-    path('bulk-operations/sync-preflight/', views.sync_preflight, name='sync_preflight'),
-    path('bulk-operations/sync-now/', views.bulk_sync_post, name='bulk_sync_post'),
+    # Redirects ? these moved to erpnext app
+    path('bulk-operations/sync-preflight/', RedirectView.as_view(pattern_name='erpnext:sync_preflight', permanent=True), name='sync_preflight'),
+    path('bulk-operations/sync-now/', RedirectView.as_view(pattern_name='erpnext:bulk_sync_post', permanent=True), name='bulk_sync_post'),
 
-    # AJAX single-transaction classifier (no save)
+    # AJAX single-transaction classifier
     path('classify/', views.classify_single, name='classify_single'),
 
     path('transactions/<int:pk>/categorize/', views.categorize_transaction, name='categorize_transaction'),

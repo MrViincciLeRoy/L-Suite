@@ -4,11 +4,12 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db.models import Count
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from apps.main.models import ERPNextConfig, ERPNextSyncLog, BankTransaction
+from apps.main.models import ERPNextConfig, ERPNextSyncLog, BankTransaction, TransactionCategory
 from .services import ERPNextService
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,48 @@ logger = logging.getLogger(__name__)
 def _active_config(user):
     return ERPNextConfig.objects.filter(user=user, is_active=True).first()
 
+
+def _apply_bulk_sync(config):
+    from apps.bridge.services import BulkSyncService
+    return BulkSyncService(config).sync_all_ready()
+
+
+def _handle_bulk_sync_result(request, success, failed, total):
+    if total == 0:
+        messages.info(request, 'No transactions ready to sync.')
+    elif failed == 0:
+        messages.success(request, f'Synced {success} of {total} transactions!')
+    else:
+        messages.warning(request, f'Synced {success}, failed {failed} out of {total}.')
+
+
+def _get_junk_category_ids():
+    from apps.bridge.services import _get_junk_category_ids as _junk
+    return _junk()
+
+
+def _unaccounted_categories(junk_ids):
+    base_filter = dict(transactions__erpnext_synced=False)
+
+    def _pending_qs(**extra):
+        return (
+            TransactionCategory.objects
+            .filter(**base_filter, **extra)
+            .exclude(id__in=junk_ids)
+            .annotate(pending_count=Count('transactions'))
+            .filter(pending_count__gt=0)
+            .distinct()
+        )
+
+    cat_map = {
+        c.pk: c
+        for c in list(_pending_qs(erpnext_account__isnull=True))
+               + list(_pending_qs(erpnext_account=''))
+    }
+    return sorted(cat_map.values(), key=lambda c: c.name)
+
+
+# ?? Config CRUD ??????????????????????????????????????????????????????????????
 
 @login_required
 def configs(request):
@@ -61,12 +104,10 @@ def edit_config(request, pk):
         config.bank_account        = request.POST.get('bank_account', '')
         config.default_cost_center = request.POST.get('default_cost_center', '')
         config.is_active           = 'is_active' in request.POST
-
         service = ERPNextService(config)
         success, message = service.test_connection()
         if not success:
             messages.warning(request, f'Connection test failed: {message}')
-
         config.save()
         messages.success(request, 'Configuration updated!')
         return redirect(reverse('erpnext:configs'))
@@ -101,6 +142,8 @@ def activate_config(request, pk):
     return redirect(reverse('erpnext:configs'))
 
 
+# ?? Sync logs ????????????????????????????????????????????????????????????????
+
 @login_required
 def sync_logs(request):
     logs_qs = ERPNextSyncLog.objects.filter(
@@ -115,23 +158,19 @@ def sync_logs(request):
 def sync_transaction(request, pk):
     transaction = get_object_or_404(BankTransaction, pk=pk, user=request.user)
     if not transaction.category_id:
-        return JsonResponse(
-            {'success': False, 'message': 'Transaction must be categorized first'}, status=400,
-        )
+        return JsonResponse({'success': False, 'message': 'Transaction must be categorized first'}, status=400)
     config = _active_config(request.user)
     if not config:
         return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
     try:
         service = ERPNextService(config)
         journal_entry_name = service.create_journal_entry(transaction)
-        return JsonResponse({
-            'success': True,
-            'message': f'Synced: {journal_entry_name}',
-            'journal_entry': journal_entry_name,
-        })
+        return JsonResponse({'success': True, 'message': f'Synced: {journal_entry_name}', 'journal_entry': journal_entry_name})
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
+
+# ?? Data fetch endpoints ??????????????????????????????????????????????????????
 
 @login_required
 def fetch_accounts(request):
@@ -141,19 +180,11 @@ def fetch_accounts(request):
     try:
         raw = ERPNextService(config).get_chart_of_accounts()
         if not raw:
-            return JsonResponse(
-                {'success': False, 'message': 'No accounts returned. Check company name and API permissions.'},
-                status=502,
-            )
+            return JsonResponse({'success': False, 'message': 'No accounts returned. Check company name and API permissions.'}, status=502)
         accounts = sorted(
-            [{
-                'name': a['name'],
-                'account_name': a.get('account_name') or a['name'],
-                'account_type': a.get('account_type', ''),
-                'root_type': a.get('root_type', ''),
-                'company': a.get('company', ''),
-                'is_group': bool(a.get('is_group')),
-            } for a in raw],
+            [{'name': a['name'], 'account_name': a.get('account_name') or a['name'],
+              'account_type': a.get('account_type', ''), 'root_type': a.get('root_type', ''),
+              'company': a.get('company', ''), 'is_group': bool(a.get('is_group'))} for a in raw],
             key=lambda x: (x['root_type'], x['name']),
         )
         return JsonResponse({'success': True, 'accounts': accounts, 'count': len(accounts)})
@@ -191,11 +222,9 @@ def fetch_companies(request):
 def update_config_defaults(request):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'message': 'POST required'}, status=405)
-
     config = _active_config(request.user)
     if not config:
         return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
-
     try:
         body = json.loads(request.body)
     except Exception:
@@ -210,13 +239,11 @@ def update_config_defaults(request):
     if not bank:
         return JsonResponse({'success': False, 'message': 'Bank account is required'}, status=400)
 
-    # Resolve company abbreviation to full name before saving
     service = ERPNextService(config)
     companies = service.get_companies()
     resolved_company = company
     for c in companies:
         if c.get('name') == company:
-            resolved_company = company
             break
         if c.get('abbr', '').strip().upper() == company.upper():
             resolved_company = c['name']
@@ -229,9 +256,84 @@ def update_config_defaults(request):
     config.save(update_fields=['default_company', 'bank_account', 'default_cost_center'])
 
     note = f" (resolved from '{company}')" if resolved_company != company else ""
-    logger.info(f"Config {config.id} defaults updated: company={resolved_company!r}{note} bank={bank!r}")
     return JsonResponse({
         'success': True,
         'message': f'Defaults saved. Company: {resolved_company}{note}',
         'resolved_company': resolved_company,
     })
+
+
+# ?? Preflight + sync ??????????????????????????????????????????????????????????
+
+@login_required
+def sync_preflight(request):
+    config = _active_config(request.user)
+    if not config:
+        messages.error(request, 'No active ERPNext configuration found.')
+        return redirect(reverse('bridge:bulk_operations'))
+
+    junk_ids = _get_junk_category_ids()
+    missing_cats = _unaccounted_categories(junk_ids)
+
+    if request.method == 'POST':
+        # Save any config overrides submitted from the settings dropdowns
+        new_company     = request.POST.get('config_company', '').strip()
+        new_bank        = request.POST.get('config_bank_account', '').strip()
+        new_cost_center = request.POST.get('config_cost_center', '').strip()
+        config_fields   = []
+        if new_company and new_company != config.default_company:
+            config.default_company = new_company
+            config_fields.append('default_company')
+        if new_bank and new_bank != config.bank_account:
+            config.bank_account = new_bank
+            config_fields.append('bank_account')
+        if new_cost_center != config.default_cost_center:
+            config.default_cost_center = new_cost_center
+            config_fields.append('default_cost_center')
+        if config_fields:
+            config.save(update_fields=config_fields)
+            messages.success(request, f'ERPNext settings updated ({", ".join(config_fields)}).')
+
+        updated = 0
+        for cat in missing_cats:
+            account = request.POST.get(f'account_{cat.pk}', '').strip()
+            if account:
+                cat.erpnext_account = account
+                cat.save(update_fields=['erpnext_account'])
+                updated += 1
+        if updated:
+            messages.success(request, f'Saved ERPNext accounts for {updated} categor{"y" if updated == 1 else "ies"}.')
+
+        still_missing = [c for c in missing_cats if not request.POST.get(f'account_{c.pk}', '').strip()]
+        if still_missing and not request.POST.get('skip_missing'):
+            messages.warning(request, f'{len(still_missing)} categories still have no account ? their transactions will be skipped.')
+
+        return redirect(reverse('erpnext:bulk_sync_post'))
+
+    ready_count = (
+        BankTransaction.objects
+        .filter(category__isnull=False, erpnext_synced=False, category__erpnext_account__isnull=False)
+        .exclude(category__erpnext_account='')
+        .exclude(category_id__in=junk_ids)
+        .count()
+    )
+
+    return render(request, 'erpnext/sync_preflight.html', {
+        'config': config,
+        'missing_cats': missing_cats,
+        'ready_count': ready_count,
+    })
+
+
+@login_required
+def bulk_sync_post(request):
+    config = _active_config(request.user)
+    if not config:
+        messages.error(request, 'No active ERPNext configuration.')
+        return redirect(reverse('bridge:bulk_operations'))
+    try:
+        success, failed, total = _apply_bulk_sync(config)
+        _handle_bulk_sync_result(request, success, failed, total)
+    except Exception as e:
+        messages.error(request, f'Sync error: {e}')
+    return redirect(reverse('bridge:bulk_operations'))
