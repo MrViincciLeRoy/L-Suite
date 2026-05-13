@@ -9,170 +9,57 @@
     </a>
 </div>
 
+<!-- Stats Row -->
 <div class="row mb-4">
     <div class="col-md-4 mb-3">
         <div class="card border-success h-100">
             <div class="card-body">
                 <h6 class="text-muted small">Ready to Sync Now</h6>
                 <h3 class="mb-0 text-success">{{ ready_count }}</h3>
-                <small class="text-muted">transactions already have accounts</small>
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3">
-        <div class="card border-warning h-100">
-            <div class="card-body">
-                <h6 class="text-muted small">Categories Needing Account</h6>
-                <h3 class="mb-0 text-warning">{{ missing_cats|length }}</h3>
-                <small class="text-muted">assign below to include them</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-8 mb-3">
         <div class="card border-info h-100">
             <div class="card-body">
-                <h6 class="text-muted small">ERPNext Config</h6>
-                <p class="mb-0 fw-semibold mt-2">{{ config.name }}</p>
-                <small class="text-muted">{{ config.base_url }}</small>
+                <h6 class="text-muted small">ERPNext Config Active</h6>
+                <p class="mb-0 fw-semibold">{{ config.base_url }}</p>
+                <small class="text-muted">Company: {{ config.default_company }}</small>
             </div>
         </div>
     </div>
 </div>
 
-<div class="card mb-4 border-secondary">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-cog"></i> ERPNext Settings</h5>
-        <span id="settingsBadge" class="badge bg-light text-secondary">
-            <i class="fas fa-spinner fa-spin"></i> loading…
-        </span>
-    </div>
-    <div class="card-body">
-        <div id="settingsErrorBanner" class="alert alert-warning d-none">
-            <i class="fas fa-exclamation-triangle"></i>
-            Could not load options from ERPNext — current saved values shown as text.
-        </div>
-        <div class="row g-3">
-            <div class="col-md-4">
-                <label class="form-label fw-semibold">Company</label>
-                <select name="config_company" id="configCompanySelect" class="form-select" disabled>
-                    <option value="{{ config.default_company }}">{{ config.default_company|default:"— loading… —" }}</option>
-                </select>
-                <div class="form-text text-muted">Currently: <code>{{ config.default_company|default:"not set" }}</code></div>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label fw-semibold">Bank Account</label>
-                <select name="config_bank_account" id="configBankSelect" class="form-select" disabled>
-                    <option value="{{ config.bank_account }}">{{ config.bank_account|default:"— loading… —" }}</option>
-                </select>
-                <div class="form-text text-muted">Currently: <code>{{ config.bank_account|default:"not set" }}</code></div>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label fw-semibold">Default Cost Center <span class="text-muted fw-normal">(optional)</span></label>
-                <select name="config_cost_center" id="configCostCenterSelect" class="form-select" disabled>
-                    <option value="{{ config.default_cost_center }}">{{ config.default_cost_center|default:"— none —" }}</option>
-                </select>
-                <div class="form-text text-muted">Currently: <code>{{ config.default_cost_center|default:"not set" }}</code></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% if missing_cats %}
-<div class="card mb-4 border-primary">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-plug"></i> Apply Account to All Missing Categories</h5>
-        <span id="fetchBadge" class="badge bg-light text-primary">
-            <i class="fas fa-spinner fa-spin"></i> loading…
-        </span>
-    </div>
-    <div class="card-body">
-        <div id="fetchErrorBanner" class="alert alert-danger d-none">
-            <strong><i class="fas fa-exclamation-triangle"></i> Could not load accounts from ERPNext.</strong>
-            <span id="fetchErrorMsg"></span>
-            <br>
-            <small>
-                You must select accounts from the dropdown. Do <strong>not</strong> type account names manually —
-                ERPNext requires exact account names like <code>Bank Charges - ABC</code>.
-                Fix the connection issue and <button type="button" class="btn btn-sm btn-outline-danger ms-1" onclick="fetchAccounts()">Retry</button>
-            </small>
-        </div>
-        <div class="row g-3 align-items-end">
-            <div class="col-md-8">
-                <label class="form-label fw-semibold">Select ERPNext Account</label>
-                <select id="globalAccountSelect" class="form-select" disabled>
-                    <option value="">— fetching accounts from ERPNext… —</option>
-                </select>
-            </div>
-            <div class="col-md-4 d-flex gap-2">
-                <button type="button" class="btn btn-primary w-100" id="applyAllBtn"
-                        disabled onclick="applyToAll()">
-                    <i class="fas fa-fill-drip"></i> Prefill All Empty
-                </button>
-                <button type="button" class="btn btn-outline-secondary flex-shrink-0"
-                        onclick="fetchAccounts()" title="Retry fetch">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            </div>
-        </div>
-        <div id="applyFeedback" class="mt-2" style="display:none;"></div>
-    </div>
-</div>
-{% endif %}
-
-<form method="POST" id="preflightForm" onsubmit="return validateForm()">
+<form method="POST" id="preflightForm">
     {% csrf_token %}
 
-    {% if missing_cats %}
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">
-                <i class="fas fa-exclamation-circle text-warning"></i>
-                Categories Missing ERPNext Account
-            </h5>
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-university"></i> Account Mapping</h5>
+            <span id="statusBadge" class="badge bg-light text-primary">Waiting...</span>
         </div>
-        <div class="card-body p-0">
+        <div class="card-body">
+            <div id="errorMessage" class="alert alert-danger d-none"></div>
+            
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-warning">
+                <table class="table">
+                    <thead>
                         <tr>
                             <th>Category</th>
-                            <th>Type</th>
-                            <th class="text-center">Pending Txns</th>
-                            <th style="min-width:320px;">ERPNext Account <small class="text-muted fw-normal">(select from dropdown)</small></th>
+                            <th>ERPNext Account</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for cat in missing_cats %}
                         <tr>
+                            <td>{{ cat.name }}</td>
                             <td>
-                                <strong>{{ cat.name }}</strong>
-                                {% if cat.keywords %}
-                                <br><small class="text-muted">{{ cat.keywords|truncatechars:60 }}</small>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if cat.transaction_type == 'debit' %}
-                                    <span class="badge bg-danger">Expense</span>
-                                {% elif cat.transaction_type == 'credit' %}
-                                    <span class="badge bg-success">Income</span>
-                                {% else %}
-                                    <span class="badge bg-info">Transfer</span>
-                                {% endif %}
-                            </td>
-                            <td class="text-center">
-                                <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
-                            </td>
-                            <td>
-                                <select name="account_{{ cat.pk }}"
-                                        class="form-select form-select-sm account-select"
-                                        data-cat="{{ cat.pk }}"
-                                        data-catname="{{ cat.name }}"
+                                <select name="account_{{ cat.pk }}" 
+                                        class="form-select account-select" 
+                                        data-cat="{{ cat.pk }}" 
                                         disabled>
-                                    <option value="">— loading accounts… —</option>
+                                    <option value="">Loading accounts...</option>
                                 </select>
-                                <div class="invalid-feedback">
-                                    Select a valid ERPNext account from the dropdown.
-                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -180,200 +67,66 @@
                 </table>
             </div>
         </div>
-        <div class="card-footer">
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="skip_missing"
-                       id="skipMissing" value="1">
-                <label class="form-check-label text-muted small" for="skipMissing">
-                    Don't warn me about unassigned categories — just sync what's ready
-                </label>
-            </div>
-        </div>
-    </div>
-    {% else %}
-    <div class="alert alert-success">
-        <i class="fas fa-check-circle"></i>
-        <strong>All categories have ERPNext accounts assigned.</strong>
-        Ready to sync {{ ready_count }} transaction{{ ready_count|pluralize }}.
-    </div>
-    {% endif %}
-
-    <div id="submitValidationError" class="alert alert-danger d-none mb-3">
-        <i class="fas fa-exclamation-triangle"></i>
-        <strong>Cannot sync yet:</strong> accounts could not be loaded from ERPNext.
-        Please retry the fetch above before submitting, or check "skip" to sync only already-configured categories.
     </div>
 
-    <div class="d-flex gap-2 justify-content-end">
-        <a href="{% url 'bridge:bulk_operations' %}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
-            <i class="fas fa-cloud-upload-alt"></i>
-            Save Accounts &amp; Sync
-            {% if ready_count %}
-            ({{ ready_count }} ready{% if missing_cats %} + up to {{ missing_cats|length }} more{% endif %})
-            {% endif %}
+    <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-primary" onclick="fetchAccounts()">
+            <i class="fas fa-sync"></i> Retry Fetch
         </button>
+        <button type="submit" class="btn btn-success">Save & Sync</button>
     </div>
 </form>
 
 <script>
-let allAccounts = [];
-let fetchSucceeded = false;
+async function fetchAccounts() {
+    const selects = document.querySelectorAll('.account-select');
+    const badge = document.getElementById('statusBadge');
+    const errorDiv = document.getElementById('errorMessage');
 
-function groupedOptions(accounts, currentVal) {
-    const groups = {};
-    accounts.forEach(a => {
-        const g = a.root_type || 'Other';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(a);
-    });
+    badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+    errorDiv.classList.add('d-none');
 
-    let html = '<option value="">— skip this category —</option>';
-    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
-    order.forEach(gName => {
-        if (!groups[gName]) return;
-        html += `<optgroup label="${gName}">`;
-        groups[gName].forEach(a => {
-            const sel = a.name === currentVal ? ' selected' : '';
-            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
-            html += `<option value="${a.name}"${sel}>${label}</option>`;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+        const response = await fetch('/erpnext/fetch-accounts/', {
+            signal: controller.signal,
+            headers: {'X-Requested-With': 'XMLHttpRequest'}
         });
-        html += '</optgroup>';
-    });
-    return html;
-}
+        
+        clearTimeout(timeoutId);
+        const data = await response.json();
 
-function globalOptions(accounts) {
-    let html = '<option value="">— pick an account to prefill all —</option>';
-    const groups = {};
-    accounts.forEach(a => {
-        const g = a.root_type || 'Other';
-        if (!groups[g]) groups[g] = [];
-        groups[g].push(a);
-    });
-    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
-    order.forEach(gName => {
-        if (!groups[gName]) return;
-        html += `<optgroup label="${gName}">`;
-        groups[gName].forEach(a => {
-            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
-            html += `<option value="${a.name}">${label}</option>`;
+        if (!data.success) throw new Error(data.message || 'Server error');
+
+        let options = '<option value="">-- Select Account --</option>';
+        data.accounts.forEach(acc => {
+            options += `<option value="${acc.name}">${acc.name}</option>`;
         });
-        html += '</optgroup>';
-    });
-    return html;
-}
 
-function fetchAccounts() {
-    fetchSucceeded = false;
-    const badge = document.getElementById('fetchBadge');
-    const errorBanner = document.getElementById('fetchErrorBanner');
-    const errorMsg = document.getElementById('fetchErrorMsg');
-    const globalSel = document.getElementById('globalAccountSelect');
-    const applyBtn = document.getElementById('applyAllBtn');
+        selects.forEach(sel => {
+            sel.innerHTML = options;
+            sel.disabled = false;
+        });
 
-    if (badge) {
-        badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading…';
-        badge.className = 'badge bg-light text-primary';
+        badge.className = 'badge bg-success';
+        badge.innerText = 'Connected';
+
+    } catch (err) {
+        console.error(err);
+        badge.className = 'badge bg-danger';
+        badge.innerText = 'Error';
+        errorDiv.innerText = 'Failed to load ERPNext accounts: ' + err.message;
+        errorDiv.classList.remove('d-none');
+        
+        selects.forEach(sel => {
+            sel.innerHTML = '<option value="">Error loading data</option>';
+        });
     }
-    if (errorBanner) errorBanner.classList.add('d-none');
-    if (globalSel) globalSel.disabled = true;
-    if (applyBtn) applyBtn.disabled = true;
-
-    // Reset selects back to loading state
-    document.querySelectorAll('.account-select').forEach(el => {
-        el.innerHTML = '<option value="">— loading… —</option>';
-        el.disabled = true;
-    });
-
-    fetch('/erpnext/fetch-accounts/', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (!data.success || !data.accounts || data.accounts.length === 0) {
-            throw new Error(data.message || 'No accounts returned from ERPNext.');
-        }
-
-        allAccounts = data.accounts;
-        fetchSucceeded = true;
-
-        if (globalSel) {
-            globalSel.innerHTML = globalOptions(allAccounts);
-            globalSel.disabled = false;
-        }
-        if (applyBtn) applyBtn.disabled = false;
-
-        document.querySelectorAll('.account-select').forEach(el => {
-            const cur = el.dataset.currentValue || '';
-            el.innerHTML = groupedOptions(allAccounts, cur);
-            el.disabled = false;
-        });
-
-        if (badge) {
-            badge.innerHTML = `<i class="fas fa-check-circle"></i> ${allAccounts.length} accounts`;
-            badge.className = 'badge bg-success';
-        }
-    })
-    .catch(err => {
-        fetchSucceeded = false;
-        const msg = err.message || 'Unknown error';
-        if (badge) {
-            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
-            badge.className = 'badge bg-danger';
-        }
-        if (errorBanner) {
-            errorBanner.classList.remove('d-none');
-            if (errorMsg) errorMsg.textContent = ' ' + msg;
-        }
-        // Leave selects disabled — do NOT fall back to text inputs
-        document.querySelectorAll('.account-select').forEach(el => {
-            el.innerHTML = '<option value="">— fetch failed, retry above —</option>';
-            el.disabled = true;
-        });
-        if (globalSel) {
-            globalSel.innerHTML = '<option value="">— fetch failed —</option>';
-            globalSel.disabled = true;
-        }
-    });
 }
 
-function applyToAll() {
-    const val = document.getElementById('globalAccountSelect').value;
-    if (!val) return;
-
-    let filled = 0;
-    document.querySelectorAll('.account-select').forEach(el => {
-        if (!el.value && !el.disabled) {
-            el.value = val;
-            filled++;
-        }
-    });
-
-    const fb = document.getElementById('applyFeedback');
-    fb.innerHTML = filled > 0
-        ? `<div class="alert alert-success py-2 mb-0"><i class="fas fa-check"></i> Prefilled <strong>${filled}</strong> empty field${filled !== 1 ? 's' : ''} with <em>${val}</em>.</div>`
-        : `<div class="alert alert-info py-2 mb-0"><i class="fas fa-info-circle"></i> All fields already filled.</div>`;
-    fb.style.display = 'block';
-    setTimeout(() => { fb.style.display = 'none'; }, 4000);
-}
-
-function validateForm() {
-    const hasMissingCats = document.querySelectorAll('.account-select').length > 0;
-    const skipMissing = document.getElementById('skipMissing');
-
-    // If there are missing cats, accounts failed to load, and user didn't check skip
-    if (hasMissingCats && !fetchSucceeded && !(skipMissing && skipMissing.checked)) {
-        const errDiv = document.getElementById('submitValidationError');
-        if (errDiv) {
-            errDiv.classList.remove('d-none');
-            errDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        return false;
-    }
-    return true;
-}
-
+// Run on load
 document.addEventListener('DOMContentLoaded', fetchAccounts);
 </script>
 {% endblock %}
