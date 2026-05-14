@@ -38,12 +38,6 @@ class ERPNextService:
             return False, str(e)
 
     def _resolve_company_name(self):
-        """
-        ERPNext requires the full company *name* (not the abbreviation).
-        If default_company looks like an abbreviation (short, all-caps, no spaces),
-        try to match it against the companies list and return the full name.
-        Caches the result for the lifetime of this service instance.
-        """
         if self._resolved_company:
             return self._resolved_company
 
@@ -56,13 +50,11 @@ class ERPNextService:
             self._resolved_company = stored
             return stored
 
-        # Exact name match first
         for c in companies:
             if c.get('name', '') == stored:
                 self._resolved_company = stored
                 return stored
 
-        # Abbreviation match (case-insensitive)
         for c in companies:
             if c.get('abbr', '').strip().upper() == stored.upper():
                 full_name = c['name']
@@ -73,22 +65,14 @@ class ERPNextService:
                 self._resolved_company = full_name
                 return full_name
 
-        # Partial name match fallback
         stored_lower = stored.lower()
         for c in companies:
             if stored_lower in c.get('name', '').lower():
                 full_name = c['name']
-                logger.warning(
-                    f"Partial company match '{stored}' -> '{full_name}'. "
-                    "Update your ERPNext config to use the exact company name."
-                )
+                logger.warning(f"Partial company match '{stored}' -> '{full_name}'.")
                 self._resolved_company = full_name
                 return full_name
 
-        logger.error(
-            f"Could not resolve company '{stored}'. "
-            f"Available: {[c.get('name') for c in companies]}"
-        )
         self._resolved_company = stored
         return stored
 
@@ -123,11 +107,6 @@ class ERPNextService:
         return 0.0
 
     def _resolve_account(self, search_term):
-        """
-        Resolve a partial or full account name to the exact ERPNext account name.
-        If the term already looks fully qualified (contains ' - '), return it as-is.
-        Otherwise, query the Account resource and return the first match.
-        """
         if not search_term:
             return search_term
         if ' - ' in search_term:
@@ -150,6 +129,23 @@ class ERPNextService:
             logger.error(f"Account resolution failed for '{search_term}': {e}")
         return search_term
 
+    def _get_bank_account_for_transaction(self, transaction):
+        """
+        Determine the ERPNext bank-side account for this transaction.
+
+        Priority order:
+          1. transaction.bank_account.erpnext_account  ? set per BankAccount record
+             (the new field; fully qualified ERPNext name like "Cash - V")
+          2. config.bank_account                        ? legacy fallback in ERPNextConfig
+        """
+        if transaction.bank_account_id and transaction.bank_account:
+            acct = (transaction.bank_account.erpnext_account or '').strip()
+            if acct:
+                return acct
+
+        # Fallback to config-level bank account
+        return (self.config.bank_account or '').strip()
+
     def create_journal_entry(self, transaction):
         if not transaction.category_id:
             raise ValueError("Transaction must be categorized before syncing")
@@ -160,18 +156,22 @@ class ERPNextService:
                 f"Category '{transaction.category.name}' has no ERPNext account configured"
             )
 
-        company = self._resolve_company_name()
+        company      = self._resolve_company_name()
         posting_date = transaction.date.strftime('%Y-%m-%d')
-        amount = self._extract_amount(transaction)
+        amount       = self._extract_amount(transaction)
 
         if amount == 0.0:
+            raise ValueError(f"Transaction {transaction.id} has zero amount")
+
+        # Get bank account from BankAccount.erpnext_account first, then config fallback
+        raw_bank_account = self._get_bank_account_for_transaction(transaction)
+        if not raw_bank_account:
             raise ValueError(
-                f"Transaction {transaction.id} has zero amount ? "
-                "check withdrawal/deposit/amount fields in the database"
+                f"No ERPNext bank account configured for transaction {transaction.id}. "
+                "Set erpnext_account on the linked BankAccount, or open Sync Preflight to assign one."
             )
 
-        # Resolve both accounts against ERPNext before posting
-        bank_account    = self._resolve_account(self.config.bank_account)
+        bank_account    = self._resolve_account(raw_bank_account)
         expense_account = self._resolve_account(erpnext_account)
 
         if transaction.transaction_type == 'debit':
@@ -257,9 +257,7 @@ class ERPNextService:
             'limit_page_length': 200,
         }
         try:
-            response = requests.get(
-                url, headers=self._get_headers(), params=params, timeout=15,
-            )
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=15)
             response.raise_for_status()
             return response.json().get('data', [])
         except Exception as e:
@@ -279,9 +277,7 @@ class ERPNextService:
                 'limit_page_length': page_length,
             }
             try:
-                response = requests.get(
-                    url, headers=self._get_headers(), params=params, timeout=30,
-                )
+                response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
                 response.raise_for_status()
                 batch = response.json().get('data', [])
             except Exception as e:
@@ -298,7 +294,6 @@ class ERPNextService:
         company = (self.config.default_company or '').strip()
         if company and all_accounts and all_accounts[0].get('company') is not None:
             filtered = [a for a in all_accounts if a.get('company') == company]
-            # If nothing matched by full name, try abbreviation
             if not filtered:
                 companies = self.get_companies()
                 resolved = company
@@ -319,9 +314,7 @@ class ERPNextService:
             'limit_page_length': 500,
         }
         try:
-            response = requests.get(
-                url, headers=self._get_headers(), params=params, timeout=30,
-            )
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
             response.raise_for_status()
             return response.json().get('data', [])
         except Exception as e:

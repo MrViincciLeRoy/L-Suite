@@ -11,6 +11,12 @@ class BankAccount(models.Model):
     account_type = models.CharField(max_length=50, blank=True)
     currency = models.CharField(max_length=3, default='ZAR')
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
+    erpnext_account = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Fully qualified ERPNext account name (e.g. "Cash - V"). '
+                  'Used as the bank-side account when syncing transactions.'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -30,7 +36,7 @@ class TransactionCategory(models.Model):
     tags = models.TextField(
         blank=True,
         default='',
-        help_text='Comma-separated merchant/brand names learned from AI matches (e.g. netflix,uber,woolworths)',
+        help_text='Comma-separated merchant/brand names learned from AI matches',
     )
     active = models.BooleanField(default=True)
     color = models.IntegerField(null=True, blank=True)
@@ -58,8 +64,10 @@ class TransactionCategory(models.Model):
         if not description:
             return False
         desc = description.lower()
-        return any(kw in desc for kw in self.get_keywords_list()) or \
-               any(tag in desc for tag in self.get_tags_list())
+        return (
+            any(kw in desc for kw in self.get_keywords_list())
+            or any(tag in desc for tag in self.get_tags_list())
+        )
 
     def __str__(self):
         return self.name
@@ -118,8 +126,11 @@ class EmailStatement(models.Model):
 
 class Invoice(models.Model):
     STATUS_CHOICES = [
-        ('draft', 'Draft'), ('sent', 'Sent'), ('paid', 'Paid'),
-        ('overdue', 'Overdue'), ('cancelled', 'Cancelled'),
+        ('draft', 'Draft'),
+        ('sent', 'Sent'),
+        ('paid', 'Paid'),
+        ('overdue', 'Overdue'),
+        ('cancelled', 'Cancelled'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='invoices')
@@ -191,9 +202,27 @@ class InvoiceItem(models.Model):
 
 class BankTransaction(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_transactions', default='user')
-    bank_account = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
-    statement = models.ForeignKey(EmailStatement, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
-    invoice = models.ForeignKey(Invoice, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_transactions')
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions',
+    )
+    statement = models.ForeignKey(
+        EmailStatement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions',
+    )
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions',
+    )
     date = models.DateField(db_index=True)
     transaction_type = models.CharField(max_length=100, blank=True, db_index=True)
     amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
@@ -206,7 +235,13 @@ class BankTransaction(models.Model):
     balance = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, default='ZAR')
     unallocated_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
-    category = models.ForeignKey(TransactionCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
+    category = models.ForeignKey(
+        TransactionCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+    )
     tags = models.CharField(max_length=500, blank=True)
     notes = models.TextField(blank=True)
     is_categorized = models.TextField(blank=True)
@@ -304,8 +339,11 @@ class PDFImportJob(models.Model):
     transactions_skipped = models.IntegerField(default=0)
     error_message = models.TextField(blank=True)
     statement = models.ForeignKey(
-        'EmailStatement', null=True, blank=True,
-        on_delete=models.SET_NULL, related_name='pdf_jobs'
+        'EmailStatement',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='pdf_jobs',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
