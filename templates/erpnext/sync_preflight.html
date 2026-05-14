@@ -106,8 +106,8 @@
                         <td><strong>{{ ba.account_name }}</strong></td>
                         <td>{{ ba.bank_name|default:"—" }}</td>
                         <td>
-                            {% if ba._invalid_erpnext %}
-                                <code class="text-danger">{{ ba._invalid_erpnext }}</code>
+                            {% if ba.invalid_erpnext %}
+                                <code class="text-danger">{{ ba.invalid_erpnext }}</code>
                                 <br><small class="text-muted">invalid — not a qualified name</small>
                             {% else %}
                                 <span class="text-muted">not set</span>

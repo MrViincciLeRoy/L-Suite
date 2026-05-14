@@ -73,7 +73,7 @@ def _bank_accounts_needing_erpnext(user, junk_ids):
     for ba in BankAccount.objects.filter(pk__in=bank_account_ids):
         acct = (ba.erpnext_account or '').strip()
         if not acct or ' - ' not in acct:
-            ba._invalid_erpnext = acct
+            ba.invalid_erpnext = acct
             result.append(ba)
 
     return sorted(result, key=lambda b: b.account_name)
