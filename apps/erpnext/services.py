@@ -1,6 +1,6 @@
 import logging
 import requests
-from datetime import datetime
+from django.utils import timezone
 from apps.main.models import ERPNextSyncLog
 
 logger = logging.getLogger(__name__)
@@ -130,20 +130,10 @@ class ERPNextService:
         return search_term
 
     def _get_bank_account_for_transaction(self, transaction):
-        """
-        Determine the ERPNext bank-side account for this transaction.
-
-        Priority order:
-          1. transaction.bank_account.erpnext_account  ? set per BankAccount record
-             (the new field; fully qualified ERPNext name like "Cash - V")
-          2. config.bank_account                        ? legacy fallback in ERPNextConfig
-        """
         if transaction.bank_account_id and transaction.bank_account:
             acct = (transaction.bank_account.erpnext_account or '').strip()
             if acct:
                 return acct
-
-        # Fallback to config-level bank account
         return (self.config.bank_account or '').strip()
 
     def create_journal_entry(self, transaction):
@@ -163,7 +153,6 @@ class ERPNextService:
         if amount == 0.0:
             raise ValueError(f"Transaction {transaction.id} has zero amount")
 
-        # Get bank account from BankAccount.erpnext_account first, then config fallback
         raw_bank_account = self._get_bank_account_for_transaction(transaction)
         if not raw_bank_account:
             raise ValueError(
@@ -211,7 +200,7 @@ class ERPNextService:
 
             transaction.erpnext_synced        = True
             transaction.erpnext_journal_entry = journal_entry_name
-            transaction.erpnext_sync_date     = datetime.utcnow()
+            transaction.erpnext_sync_date     = timezone.now()
             transaction.erpnext_error         = ''
             transaction.save()
 
