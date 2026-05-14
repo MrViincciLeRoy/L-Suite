@@ -1,37 +1,25 @@
 name: Migrate on Push
-
 on:
   push:
     branches:
       - '**'
-
 jobs:
   migrate:
     runs-on: ubuntu-latest
-
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
       DJANGO_SETTINGS_MODULE: LSuite.settings
       DEBUG: 'False'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Make migrations
-        run: python manage.py makemigrations
-
-      - name: Migrate
-        run: |
-          python manage.py migrate main 0002 --fake
-          python manage.py migrate
+      - name: Run migrations
+        run: python manage.py migrate
