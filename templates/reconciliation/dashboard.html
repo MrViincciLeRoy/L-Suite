@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Reconciliation{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="fa fa-balance-scale me-2"></i>Reconciliation</h2>
+  <a href="{% url 'reconciliation:period_detail' year=today.year month=today.month %}"
+     class="btn btn-primary">
+    <i class="fa fa-calendar me-1"></i>Current Month
+  </a>
+</div>
+
+{% if periods %}
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Period</th>
+        <th>Status</th>
+        <th class="text-center">Total</th>
+        <th class="text-center text-success">Matched</th>
+        <th class="text-center text-danger">Flagged</th>
+        <th class="text-center text-warning">Unreconciled</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in periods %}
+      <tr>
+        <td><strong>{{ p.label }}</strong></td>
+        <td>
+          {% if p.status == 'closed' %}
+            <span class="badge bg-success">Closed</span>
+          {% else %}
+            <span class="badge bg-warning text-dark">Open</span>
+          {% endif %}
+        </td>
+        <td class="text-center">{{ p.total_transactions }}</td>
+        <td class="text-center text-success">{{ p.matched_count }}</td>
+        <td class="text-center text-danger">{{ p.flagged_count }}</td>
+        <td class="text-center text-warning">{{ p.unreconciled_count }}</td>
+        <td>
+          <a href="{% url 'reconciliation:period_detail' year=p.year month=p.month %}"
+             class="btn btn-sm btn-outline-secondary">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="fa fa-inbox fa-3x mb-3 d-block"></i>
+  No reconciliation periods yet. Start with the current month.
+</div>
+{% endif %}
+{% endblock %}

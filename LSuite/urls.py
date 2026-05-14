@@ -9,4 +9,6 @@ urlpatterns = [
     path('bridge/', include('apps.bridge.urls', namespace='bridge')),
     path('gmail/', include('apps.gmail.urls', namespace='gmail')),
     path('social/', include('social_django.urls', namespace='social')),
+    path('reconciliation/', include('apps.reconciliation.urls', namespace='reconciliation')),  # ? add this
+
 ]

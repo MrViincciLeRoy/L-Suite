@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}{{ month_label }} Reconciliation{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{% url 'reconciliation:dashboard' %}" class="text-muted text-decoration-none">
+      <i class="fa fa-arrow-left me-1"></i>Reconciliation
+    </a>
+    <h3 class="mb-0 mt-1">{{ month_label }}</h3>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{% url 'reconciliation:fetch_je' year=period.year month=period.month %}"
+       class="btn btn-outline-primary btn-sm">
+      <i class="fa fa-download me-1"></i>Fetch JEs
+    </a>
+    {% if period.status != 'closed' %}
+    <a href="{% url 'reconciliation:run_match' year=period.year month=period.month %}"
+       class="btn btn-outline-success btn-sm">
+      <i class="fa fa-bolt me-1"></i>Run Matching
+    </a>
+    {% endif %}
+    <a href="{% url 'reconciliation:export_csv' year=period.year month=period.month %}"
+       class="btn btn-outline-secondary btn-sm">
+      <i class="fa fa-file-csv me-1"></i>Export CSV
+    </a>
+    {% if period.status == 'open' %}
+      {% if period.can_close %}
+      <a href="{% url 'reconciliation:close_period' year=period.year month=period.month %}"
+         class="btn btn-success btn-sm">
+        <i class="fa fa-lock me-1"></i>Close Period
+      </a>
+      {% endif %}
+    {% else %}
+    <form method="post" action="{% url 'reconciliation:reopen_period' year=period.year month=period.month %}" class="d-inline">
+      {% csrf_token %}
+      <button class="btn btn-outline-warning btn-sm">
+        <i class="fa fa-lock-open me-1"></i>Reopen
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if period.status == 'closed' %}
+<div class="alert alert-success mb-3">
+  <i class="fa fa-check-circle me-1"></i>
+  Period closed on {{ period.closed_at|date:"d M Y H:i" }}.
+</div>
+{% endif %}
+
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card text-center h-100">
+      <div class="card-body py-3">
+        <h3 class="mb-0">{{ period.total_transactions }}</h3>
+        <small class="text-muted">Total Transactions</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-success h-100">
+      <div class="card-body py-3">
+        <h3 class="mb-0 text-success">{{ period.matched_count }}</h3>
+        <small class="text-muted">Matched</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-danger h-100">
+      <div class="card-body py-3">
+        <h3 class="mb-0 text-danger">{{ period.flagged_count }}</h3>
+        <small class="text-muted">Flagged</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card text-center border-warning h-100">
+      <div class="card-body py-3">
+        <h3 class="mb-0 text-warning">{{ period.unreconciled_count }}</h3>
+        <small class="text-muted">Unreconciled</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if je_count == 0 %}
+<div class="alert alert-warning">
+  <i class="fa fa-exclamation-triangle me-1"></i>
+  No journal entries fetched for this period yet. Click <strong>Fetch JEs</strong> first.
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="mb-3 d-flex gap-2 flex-wrap">
+  <a href="?" class="btn btn-sm {% if not status_filter %}btn-secondary{% else %}btn-outline-secondary{% endif %}">All</a>
+  <a href="?status=unreconciled" class="btn btn-sm {% if status_filter == 'unreconciled' %}btn-warning{% else %}btn-outline-warning{% endif %}">Unreconciled</a>
+  <a href="?status=matched" class="btn btn-sm {% if status_filter == 'matched' %}btn-success{% else %}btn-outline-success{% endif %}">Matched</a>
+  <a href="?status=flagged" class="btn btn-sm {% if status_filter == 'flagged' %}btn-danger{% else %}btn-outline-danger{% endif %}">Flagged</a>
+</div>
+
+<!-- Transaction table -->
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Date</th>
+        <th>Description</th>
+        <th class="text-end">Amount</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Matched JE</th>
+        <th>Flag Reason</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for txn in transactions %}
+      <tr>
+        <td class="text-nowrap">{{ txn.date|date:"d M Y" }}</td>
+        <td>{{ txn.description|truncatechars:45 }}</td>
+        <td class="text-end text-nowrap">R {{ txn.amount }}</td>
+        <td>
+          <span class="badge {% if txn.transaction_type == 'credit' %}bg-success{% else %}bg-secondary{% endif %}">
+            {{ txn.transaction_type }}
+          </span>
+        </td>
+        <td>
+          <span class="badge
+            {% if txn.recon_status == 'matched' %}bg-success
+            {% elif txn.recon_status == 'flagged' %}bg-danger
+            {% else %}bg-warning text-dark{% endif %}">
+            {{ txn.recon_status }}
+          </span>
+        </td>
+        <td class="small">
+          {% if txn.recon_match.journal_entry %}
+            <code>{{ txn.recon_match.journal_entry.je_name }}</code>
+            {% if txn.recon_match.matched_by == 'manual' %}
+              <span class="badge bg-info ms-1">manual</span>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="text-muted small">
+          {% if txn.recon_match %}{{ txn.recon_match.flag_reason|truncatechars:40 }}{% endif %}
+        </td>
+        <td>
+          {% if period.status != 'closed' %}
+            {% if txn.recon_status == 'flagged' or txn.recon_status == 'unreconciled' %}
+            <button class="btn btn-xs btn-outline-primary btn-sm"
+                    data-bs-toggle="modal"
+                    data-bs-target="#manualMatchModal"
+                    data-txn-id="{{ txn.id }}"
+                    data-txn-desc="{{ txn.description|truncatechars:40 }}"
+                    data-txn-amount="{{ txn.amount }}">
+              Match
+            </button>
+            {% elif txn.recon_status == 'matched' %}
+            <form method="post" action="{% url 'reconciliation:unmatch_transaction' txn.id %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-xs btn-outline-secondary btn-sm"
+                      onclick="return confirm('Remove this match?')">Unmatch</button>
+            </form>
+            {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="8" class="text-center text-muted py-4">
+          No transactions found for this filter.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Manual Match Modal -->
+{% if period.status != 'closed' %}
+<div class="modal fade" id="manualMatchModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Manual Match</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="" id="manualMatchForm">
+        {% csrf_token %}
+        <div class="modal-body">
+          <p class="mb-3">
+            <strong id="modalTxnDesc"></strong><br>
+            <span class="text-muted">Amount: R <span id="modalTxnAmount"></span></span>
+          </p>
+          <label class="form-label">Select Journal Entry to match</label>
+          <select name="journal_entry_id" class="form-select" required>
+            <option value="">— select —</option>
+            {% for je in available_journal_entries %}
+            <option value="{{ je.id }}">{{ je.je_name }} | {{ je.posting_date }} | R {{ je.amount }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Match</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const modal = document.getElementById('manualMatchModal');
+  modal.addEventListener('show.bs.modal', function (e) {
+    const btn = e.relatedTarget;
+    const txnId = btn.dataset.txnId;
+    const desc = btn.dataset.txnDesc;
+    const amount = btn.dataset.txnAmount;
+    document.getElementById('modalTxnDesc').textContent = desc;
+    document.getElementById('modalTxnAmount').textContent = amount;
+    document.getElementById('manualMatchForm').action = '/reconciliation/match/manual/' + txnId + '/';
+  });
+});
+</script>
+{% endif %}
+
+{% endblock %}

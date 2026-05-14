@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.gmail",
     "apps.main",
     "apps.bank_parsers",
+    "apps.reconciliation",
 ]
 
 MIDDLEWARE = [
