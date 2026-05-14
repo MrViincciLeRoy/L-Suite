@@ -1,0 +1,29 @@
+name: Fake Migrate 0002
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fake_migrate:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Make migrations
+        run: python manage.py makemigrations
+
+      - name: Fake migrate 0002
+        run: python manage.py migrate --fake main 0002
