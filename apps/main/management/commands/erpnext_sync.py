@@ -46,9 +46,6 @@ class Command(BaseCommand):
             raise CommandError(str(exc))
         self.stdout.write(f"Company: {company}")
 
-        # ── Validate BankAccount.erpnext_account for all pending transactions ─
-        # The bank side of journal entries now comes from BankAccount.erpnext_account,
-        # not from ERPNextConfig.bank_account.
         junk_ids = _get_junk_ids()
 
         if single_id:
@@ -81,7 +78,52 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN — no changes written."))
 
-        # ── Pre-check: every linked BankAccount must have a valid erpnext_account
+        # ── Pre-check: resolve bank account for every transaction ─────────────
+        # Priority: BankAccount.erpnext_account → config.bank_account (resolved)
+        # Validate config fallback once upfront for transactions with no bank_account FK.
+        no_bank_link_count = qs.filter(bank_account__isnull=True).count()
+        if no_bank_link_count:
+            fallback = (config.bank_account or "").strip()
+            if not fallback:
+                raise CommandError(
+                    f"{no_bank_link_count} transaction(s) have no linked BankAccount and "
+                    "ERPNextConfig.bank_account is empty. "
+                    "Either link transactions to a BankAccount record (recommended) or "
+                    "set a valid ERPNext account in your ERPNext config."
+                )
+            if " - " not in fallback:
+                # Try to resolve it against ERPNext
+                self.stdout.write(
+                    f"  Config bank_account '{fallback}' is not fully qualified. Searching ERPNext…"
+                )
+                resolved = service._resolve_account(fallback)
+                if resolved and " - " in resolved:
+                    self.stdout.write(f"  Resolved '{fallback}' → '{resolved}', saving to config.")
+                    if not dry_run:
+                        config.bank_account = resolved
+                        config.save(update_fields=["bank_account"])
+                else:
+                    # List available bank/cash accounts to help the user pick
+                    try:
+                        all_accounts = service.get_chart_of_accounts()
+                        bank_accounts = [
+                            a["name"] for a in all_accounts
+                            if not a.get("is_group")
+                            and a.get("account_type") in ("Bank", "Cash")
+                        ]
+                        if bank_accounts:
+                            self.stdout.write("  Available Bank/Cash accounts:")
+                            for a in bank_accounts:
+                                self.stdout.write(f"    {a}")
+                    except Exception:
+                        pass
+                    raise CommandError(
+                        f"Could not resolve config bank_account '{fallback}' to a valid ERPNext account. "
+                        "Open Sync Preflight, assign the correct ERPNext account to your BankAccount "
+                        "record(s), then retry. Alternatively update ERPNextConfig.bank_account directly."
+                    )
+
+        # ── Pre-check: BankAccount records with no/invalid erpnext_account ────
         bank_account_ids = list(
             qs.filter(bank_account__isnull=False)
             .values_list("bank_account_id", flat=True)
@@ -92,6 +134,17 @@ class Command(BaseCommand):
         for ba in BankAccount.objects.filter(pk__in=bank_account_ids):
             acct = (ba.erpnext_account or "").strip()
             if not acct or " - " not in acct:
+                # Try auto-resolve
+                if acct:
+                    resolved = service._resolve_account(acct)
+                    if resolved and " - " in resolved:
+                        self.stdout.write(
+                            f"  BankAccount '{ba.account_name}': '{acct}' → '{resolved}'"
+                        )
+                        if not dry_run:
+                            ba.erpnext_account = resolved
+                            ba.save(update_fields=["erpnext_account"])
+                        continue
                 self.stdout.write(
                     self.style.ERROR(
                         f"  BankAccount '{ba.account_name}' has no valid ERPNext account "
@@ -102,13 +155,11 @@ class Command(BaseCommand):
                 bad_bank_ids.add(ba.pk)
 
         if bad_bank_ids:
-            # Transactions without a linked bank account use config fallback — allow those.
-            # Exclude transactions linked to bad bank accounts.
             qs = qs.exclude(bank_account_id__in=bad_bank_ids)
             total = qs.count()
             self.stdout.write(
                 self.style.WARNING(
-                    f"{len(bad_bank_ids)} bank account(s) skipped. "
+                    f"{len(bad_bank_ids)} BankAccount(s) skipped. "
                     f"{total} transaction(s) remaining."
                 )
             )
@@ -158,12 +209,13 @@ class Command(BaseCommand):
                 continue
 
             if dry_run:
-                bank_label = (
-                    txn.bank_account.erpnext_account
-                    if txn.bank_account_id
-                    else config.bank_account or "config fallback"
+                if txn.bank_account_id:
+                    bank_label = txn.bank_account.erpnext_account or "not set"
+                else:
+                    bank_label = config.bank_account or "config fallback (not set)"
+                self.stdout.write(
+                    f"  DRY  {desc}: {amount:.2f} | bank → {bank_label}"
                 )
-                self.stdout.write(f"  DRY  {desc}: {amount:.2f} | bank → {bank_label}")
                 synced += 1
                 continue
 

@@ -57,14 +57,21 @@
             <button type="button" class="btn btn-sm btn-outline-warning ms-2" onclick="fetchSettings()">Retry</button>
         </div>
         <div class="row g-3">
-            <div class="col-md-6">
-                <label class="form-label fw-semibold">Company</label>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Company <span class="text-danger">*</span></label>
                 <select name="config_company" id="configCompanySelect" class="form-select">
                     <option value="{{ config.default_company }}">{{ config.default_company|default:"— loading —" }}</option>
                 </select>
                 <div class="form-text text-muted">Saved: <code>{{ config.default_company|default:"not set" }}</code></div>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Bank Account <span class="text-danger">*</span></label>
+                <select name="config_bank_account" id="configBankAccountSelect" class="form-select">
+                    <option value="{{ config.bank_account }}">{{ config.bank_account|default:"— loading —" }}</option>
+                </select>
+                <div class="form-text text-muted">Saved: <code>{{ config.bank_account|default:"not set" }}</code></div>
+            </div>
+            <div class="col-md-4">
                 <label class="form-label fw-semibold">Default Cost Center <span class="text-muted fw-normal">(optional)</span></label>
                 <select name="config_cost_center" id="configCostCenterSelect" class="form-select">
                     <option value="{{ config.default_cost_center }}">{{ config.default_cost_center|default:"— none —" }}</option>
@@ -99,8 +106,8 @@
                         <td><strong>{{ ba.account_name }}</strong></td>
                         <td>{{ ba.bank_name|default:"—" }}</td>
                         <td>
-                            {% if ba.invalid_erpnext %}
-                                <code class="text-danger">{{ ba.invalid_erpnext }}</code>
+                            {% if ba._invalid_erpnext %}
+                                <code class="text-danger">{{ ba._invalid_erpnext }}</code>
                                 <br><small class="text-muted">invalid — not a qualified name</small>
                             {% else %}
                                 <span class="text-muted">not set</span>
@@ -242,8 +249,9 @@
 
 <script>
 const SAVED = {
-    company:    "{{ config.default_company|escapejs }}",
-    costCenter: "{{ config.default_cost_center|escapejs }}",
+    company:     "{{ config.default_company|escapejs }}",
+    bankAccount: "{{ config.bank_account|escapejs }}",
+    costCenter:  "{{ config.default_cost_center|escapejs }}",
 };
 
 let allAccounts = [];
@@ -270,15 +278,15 @@ function groupedOptions(accounts) {
 }
 
 function bankOptions(accounts) {
-    // For bank mapping: show Asset/Bank/Cash accounts only
     const pool = accounts.filter(
         a => !a.is_group && (a.account_type === 'Bank' || a.account_type === 'Cash' || a.root_type === 'Asset')
     );
     const options = pool.length ? pool : accounts.filter(a => !a.is_group);
     let html = '<option value="">— select ERPNext account —</option>';
     options.forEach(a => {
+        const sel = a.name === SAVED.bankAccount ? ' selected' : '';
         const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
-        html += `<option value="${a.name}">${label}</option>`;
+        html += `<option value="${a.name}"${sel}>${label}</option>`;
     });
     return html;
 }
@@ -291,8 +299,10 @@ function fetchSettings() {
     Promise.all([
         fetch('/erpnext/fetch-companies/',    { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
         fetch('/erpnext/fetch-cost-centers/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
+        fetch('/erpnext/fetch-accounts/',     { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
     ])
-    .then(([companyData, ccData]) => {
+    .then(([companyData, ccData, accountData]) => {
+        // Company
         const companySel = document.getElementById('configCompanySelect');
         if (companyData.success && companyData.companies?.length) {
             let html = '<option value="">— select company —</option>';
@@ -303,6 +313,13 @@ function fetchSettings() {
             companySel.innerHTML = html;
         }
 
+        // Bank Account — Asset/Bank/Cash accounts from ERPNext
+        const bankSel = document.getElementById('configBankAccountSelect');
+        if (accountData.success && accountData.accounts?.length) {
+            bankSel.innerHTML = bankOptions(accountData.accounts);
+        }
+
+        // Cost Center
         const ccSel = document.getElementById('configCostCenterSelect');
         if (ccData.success && ccData.cost_centers?.length) {
             let html = '<option value="">— none —</option>';
@@ -343,25 +360,28 @@ function fetchAccounts() {
         if (!data.success || !data.accounts?.length) throw new Error(data.message || 'No accounts returned.');
         allAccounts = data.accounts;
 
-        // Category selects — all account types
         document.querySelectorAll('.account-select').forEach(el => {
             el.innerHTML = groupedOptions(allAccounts);
         });
 
-        // Bank account selects — Asset/Bank/Cash only
         document.querySelectorAll('.bank-account-select').forEach(el => {
             el.innerHTML = bankOptions(allAccounts);
         });
 
-        // Global prefill dropdown
         if (globalSel) {
-            let html = '<option value="">— pick an account to prefill all category rows —</option>';
             const groups = {};
-            allAccounts.forEach(a => { const g = a.root_type || 'Other'; if (!groups[g]) groups[g] = []; groups[g].push(a); });
+            allAccounts.forEach(a => {
+                const g = a.root_type || 'Other';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(a);
+            });
+            let html = '<option value="">— pick an account to prefill all category rows —</option>';
             ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'].forEach(g => {
                 if (!groups[g]) return;
                 html += `<optgroup label="${g}">`;
-                groups[g].forEach(a => { html += `<option value="${a.name}">${a.name}${a.account_type ? ' (' + a.account_type + ')' : ''}</option>`; });
+                groups[g].forEach(a => {
+                    html += `<option value="${a.name}">${a.name}${a.account_type ? ' (' + a.account_type + ')' : ''}</option>`;
+                });
                 html += '</optgroup>';
             });
             globalSel.innerHTML = html;

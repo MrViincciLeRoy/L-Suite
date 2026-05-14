@@ -41,7 +41,6 @@ def _get_junk_category_ids():
 
 
 def _categories_needing_account(junk_ids):
-    """Categories with pending unsynced transactions that have no valid ERPNext account."""
     pending = (
         TransactionCategory.objects
         .filter(transactions__erpnext_synced=False)
@@ -62,11 +61,6 @@ def _categories_needing_account(junk_ids):
 
 
 def _bank_accounts_needing_erpnext(user, junk_ids):
-    """
-    BankAccount records linked to pending unsynced transactions that have no
-    erpnext_account set (or have an invalid partial name without ' - ').
-    These must be mapped before the sync can run.
-    """
     bank_account_ids = (
         BankTransaction.objects
         .filter(user=user, erpnext_synced=False, bank_account__isnull=False)
@@ -307,7 +301,7 @@ def update_config_defaults(request):
     })
 
 
-# ── Preflight → save DB → dispatch GH Actions ────────────────────────────────
+# ── Preflight ─────────────────────────────────────────────────────────────────
 
 @login_required
 def sync_preflight(request):
@@ -321,10 +315,11 @@ def sync_preflight(request):
     missing_banks = _bank_accounts_needing_erpnext(request.user, junk_ids)
 
     if request.method == 'POST':
-        # 1. Save config-level fields (company, cost center)
+        # 1. Save config-level fields: company, bank_account, cost_center
         config_fields = []
         for field, post_key in [
             ('default_company',     'config_company'),
+            ('bank_account',        'config_bank_account'),
             ('default_cost_center', 'config_cost_center'),
         ]:
             val = request.POST.get(post_key, '').strip()
@@ -338,7 +333,6 @@ def sync_preflight(request):
             config.save(update_fields=config_fields)
 
         # 2. Save BankAccount → ERPNext account mappings
-        #    This is the source of truth for the bank side of journal entries.
         updated_banks = 0
         for ba in missing_banks:
             acct = request.POST.get(f'bank_erpnext_{ba.pk}', '').strip()
@@ -390,7 +384,7 @@ def sync_preflight(request):
             messages.error(request, f'DB saved but GH dispatch failed: {err}')
             return redirect(reverse('bridge:bulk_operations'))
 
-    # GET — count transactions that are truly ready
+    # GET
     ready_count = (
         BankTransaction.objects
         .filter(
@@ -416,6 +410,8 @@ def sync_preflight(request):
         'ready_count':   ready_count,
     })
 
+
+# ── Sync job status ───────────────────────────────────────────────────────────
 
 @login_required
 def sync_job_status(request):
