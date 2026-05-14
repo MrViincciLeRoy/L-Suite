@@ -33,5 +33,5 @@ jobs:
 
       - name: Migrate
         run: |
-          python manage.py migrate main 0001 --fake
+          python manage.py migrate main 0002 --fake
           python manage.py migrate
