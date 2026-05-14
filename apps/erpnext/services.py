@@ -58,10 +58,7 @@ class ERPNextService:
         for c in companies:
             if c.get('abbr', '').strip().upper() == stored.upper():
                 full_name = c['name']
-                logger.warning(
-                    f"Resolved company abbreviation '{stored}' -> '{full_name}'. "
-                    "Update your ERPNext config to use the full company name."
-                )
+                logger.warning(f"Resolved company abbreviation '{stored}' -> '{full_name}'.")
                 self._resolved_company = full_name
                 return full_name
 
@@ -135,6 +132,21 @@ class ERPNextService:
             if acct:
                 return acct
         return (self.config.bank_account or '').strip()
+
+    def fetch_journal_entries(self, from_date, to_date):
+        url = f"{self.base_url}/api/resource/Journal Entry"
+        params = {
+            'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark"]',
+            'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","=","1"]]',
+            'limit_page_length': 500,
+        }
+        try:
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
+            response.raise_for_status()
+            return response.json().get('data', [])
+        except Exception as e:
+            logger.error(f"fetch_journal_entries failed: {e}")
+            raise
 
     def create_journal_entry(self, transaction):
         if not transaction.category_id:

@@ -201,6 +201,12 @@ class InvoiceItem(models.Model):
 
 
 class BankTransaction(models.Model):
+    RECON_STATUS_CHOICES = [
+        ('unreconciled', 'Unreconciled'),
+        ('matched', 'Matched'),
+        ('flagged', 'Flagged'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_transactions', default='user')
     bank_account = models.ForeignKey(
         BankAccount,
@@ -247,6 +253,12 @@ class BankTransaction(models.Model):
     is_categorized = models.TextField(blank=True)
     is_reconciled = models.BooleanField(default=False)
     reconciled_date = models.DateTimeField(null=True, blank=True)
+    recon_status = models.CharField(
+        max_length=20,
+        choices=RECON_STATUS_CHOICES,
+        default='unreconciled',
+        db_index=True,
+    )
     erpnext_id = models.CharField(max_length=100, blank=True, db_index=True)
     erpnext_synced = models.BooleanField(default=False)
     erpnext_sync_date = models.DateTimeField(null=True, blank=True)
