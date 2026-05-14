@@ -32,4 +32,6 @@ jobs:
         run: python manage.py makemigrations
 
       - name: Migrate
-        run: python manage.py migrate
+        run: |
+          python manage.py migrate --fake-initial
+          python manage.py migrate
