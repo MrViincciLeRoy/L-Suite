@@ -55,7 +55,7 @@ def _categories_needing_account(junk_ids):
     for cat in pending:
         acct = (cat.erpnext_account or '').strip()
         if not acct or ' - ' not in acct:
-            cat._invalid_account = acct
+            cat.invalid_account = acct
             result[cat.pk] = cat
 
     return sorted(result.values(), key=lambda c: c.name)

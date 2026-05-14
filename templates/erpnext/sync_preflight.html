@@ -195,8 +195,8 @@
                             <span class="badge bg-warning text-dark">{{ cat.pending_count }}</span>
                         </td>
                         <td>
-                            {% if cat._invalid_account %}
-                                <code class="text-danger">{{ cat._invalid_account }}</code>
+                            {% if cat.invalid_account %}
+                                <code class="text-danger">{{ cat.invalid_account }}</code>
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
