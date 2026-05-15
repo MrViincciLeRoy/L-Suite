@@ -53,8 +53,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Ensure seed categories exist
-        run: python manage.py cleanup_categories
+      - name: Seed categories if none exist
+        run: python manage.py seed_categories
 
       - name: Pre-warm model
         run: |
@@ -87,3 +87,6 @@ jobs:
           ARGS="$ARGS --min-score ${SCORE:-0.2}"
 
           python manage.py auto_categorize $ARGS
+
+      - name: Cleanup empty categories
+        run: python manage.py cleanup_categories
