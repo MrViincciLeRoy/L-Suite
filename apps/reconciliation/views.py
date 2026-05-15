@@ -216,7 +216,61 @@ def export_csv(request, year, month):
             match.flag_reason if match else '',
         ])
     return response
+@login_required
+def debug_journal_entries(request):
+    config = _active_config(request.user)
+    if not config:
+        return JsonResponse({'error': 'No active ERPNext config'}, status=400)
 
+    year  = int(request.GET.get('year', 2025))
+    month = int(request.GET.get('month', 12))
+
+    from calendar import monthrange
+    from datetime import date
+    _, last_day = monthrange(year, month)
+    from_date = date(year, month, 1).isoformat()
+    to_date   = date(year, month, last_day).isoformat()
+
+    service = ERPNextService(config)
+    headers = service._get_headers()
+    base_url = service.base_url
+
+    # Try the raw request so we can see the full response
+    import requests
+    url = f"{base_url}/api/resource/Journal Entry"
+    params = {
+        'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark","docstatus"]',
+        'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"]]',
+        'limit_page_length': 20,
+    }
+
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        raw = resp.json()
+    except Exception as e:
+        raw = {'exception': str(e)}
+
+    # Also try without docstatus filter (original has docstatus=1 which means submitted only)
+    params2 = dict(params)
+    params2['filters'] = f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","in","0,1,2"]]'
+    try:
+        resp2 = requests.get(url, headers=headers, params=params2, timeout=30)
+        raw2 = resp2.json()
+    except Exception as e:
+        raw2 = {'exception': str(e)}
+
+    return JsonResponse({
+        'config': {
+            'base_url': base_url,
+            'company': config.default_company,
+        },
+        'date_range': {'from': from_date, 'to': to_date},
+        'submitted_only_count': len(raw.get('data', [])),
+        'submitted_only_sample': raw.get('data', [])[:3],
+        'all_statuses_count': len(raw2.get('data', [])),
+        'all_statuses_sample': raw2.get('data', [])[:3],
+        'raw_error': raw.get('exc') or raw.get('exception'),
+    }, json_dumps_params={'indent': 2})
 
 def _refresh_period_counts(period):
     qs = BankTransaction.objects.filter(
