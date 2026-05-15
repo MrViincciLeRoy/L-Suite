@@ -1,0 +1,79 @@
+name: Apply Missing Columns
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch-db:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install MySQL client
+        run: sudo apt-get install -y mysql-client
+
+      - name: Apply missing columns
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Parse DATABASE_URL (format: mysql://user:pass@host:port/dbname)
+          DB_USER=$(echo $DATABASE_URL | sed 's|mysql://||' | cut -d':' -f1)
+          DB_PASS=$(echo $DATABASE_URL | sed 's|mysql://[^:]*:||' | cut -d'@' -f1)
+          DB_HOST=$(echo $DATABASE_URL | cut -d'@' -f2 | cut -d':' -f1)
+          DB_PORT=$(echo $DATABASE_URL | cut -d'@' -f2 | cut -d':' -f2 | cut -d'/' -f1)
+          DB_NAME=$(echo $DATABASE_URL | cut -d'/' -f4 | cut -d'?' -f1)
+
+          mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" <<EOF
+
+          -- bank_transactions.recon_status
+          SET @col_exists = (
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'bank_transactions'
+              AND COLUMN_NAME = 'recon_status'
+          );
+          SET @sql = IF(@col_exists = 0,
+            'ALTER TABLE bank_transactions ADD COLUMN recon_status VARCHAR(20) NOT NULL DEFAULT ''unreconciled''',
+            'SELECT ''recon_status already exists'' AS msg'
+          );
+          PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+          -- bank_accounts.erpnext_account
+          SET @col_exists = (
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'bank_accounts'
+              AND COLUMN_NAME = 'erpnext_account'
+          );
+          SET @sql = IF(@col_exists = 0,
+            'ALTER TABLE bank_accounts ADD COLUMN erpnext_account VARCHAR(200) NOT NULL DEFAULT ''''',
+            'SELECT ''erpnext_account already exists'' AS msg'
+          );
+          PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+          -- transaction_categories.tags
+          SET @col_exists = (
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'transaction_categories'
+              AND COLUMN_NAME = 'tags'
+          );
+          SET @sql = IF(@col_exists = 0,
+            'ALTER TABLE transaction_categories ADD COLUMN tags TEXT NOT NULL DEFAULT ''''',
+            'SELECT ''tags already exists'' AS msg'
+          );
+          PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+          -- index on recon_status
+          SET @idx_exists = (
+            SELECT COUNT(*) FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'bank_transactions'
+              AND INDEX_NAME = 'main_banktr_recon_st_idx'
+          );
+          SET @sql = IF(@idx_exists = 0,
+            'CREATE INDEX main_banktr_recon_st_idx ON bank_transactions (recon_status)',
+            'SELECT ''index already exists'' AS msg'
+          );
+          PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+          EOF
