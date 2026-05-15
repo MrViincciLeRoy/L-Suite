@@ -21,6 +21,16 @@ def _active_config(user):
     return ERPNextConfig.objects.filter(user=user, is_active=True).first()
 
 
+def _get_config(request, config_id=None):
+    """Return a specific config by id, or fall back to the active one."""
+    if config_id:
+        try:
+            return ERPNextConfig.objects.get(pk=config_id, user=request.user)
+        except ERPNextConfig.DoesNotExist:
+            pass
+    return _active_config(request.user)
+
+
 def _apply_bulk_sync(config):
     from apps.bridge.services import BulkSyncService
     return BulkSyncService(config).sync_all_ready()
@@ -49,14 +59,12 @@ def _categories_needing_account(junk_ids):
         .filter(pending_count__gt=0)
         .distinct()
     )
-
     result = {}
     for cat in pending:
         acct = (cat.erpnext_account or '').strip()
         if not acct or ' - ' not in acct:
             cat.invalid_account = acct
             result[cat.pk] = cat
-
     return sorted(result.values(), key=lambda c: c.name)
 
 
@@ -68,14 +76,12 @@ def _bank_accounts_needing_erpnext(user, junk_ids):
         .values_list('bank_account_id', flat=True)
         .distinct()
     )
-
     result = []
     for ba in BankAccount.objects.filter(pk__in=bank_account_ids):
         acct = (ba.erpnext_account or '').strip()
         if not acct or ' - ' not in acct:
             ba.invalid_erpnext = acct
             result.append(ba)
-
     return sorted(result, key=lambda b: b.account_name)
 
 
@@ -211,13 +217,13 @@ def sync_transaction(request, pk):
         return JsonResponse({'success': False, 'message': str(e)}, status=500)
 
 
-# ── Data-fetch endpoints ──────────────────────────────────────────────────────
+# ── Data-fetch endpoints (support optional ?config_id=X) ──────────────────────
 
 @login_required
 def fetch_accounts(request):
-    config = _active_config(request.user)
+    config = _get_config(request, request.GET.get('config_id'))
     if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+        return JsonResponse({'success': False, 'message': 'No ERPNext configuration found'}, status=400)
     try:
         raw = ERPNextService(config).get_chart_of_accounts()
         if not raw:
@@ -236,9 +242,9 @@ def fetch_accounts(request):
 
 @login_required
 def fetch_cost_centers(request):
-    config = _active_config(request.user)
+    config = _get_config(request, request.GET.get('config_id'))
     if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+        return JsonResponse({'success': False, 'message': 'No ERPNext configuration found'}, status=400)
     try:
         cost_centers = ERPNextService(config).get_cost_centers()
         return JsonResponse({'success': True, 'cost_centers': cost_centers})
@@ -248,9 +254,9 @@ def fetch_cost_centers(request):
 
 @login_required
 def fetch_companies(request):
-    config = _active_config(request.user)
+    config = _get_config(request, request.GET.get('config_id'))
     if not config:
-        return JsonResponse({'success': False, 'message': 'No active ERPNext configuration'}, status=400)
+        return JsonResponse({'success': False, 'message': 'No ERPNext configuration found'}, status=400)
     try:
         companies = ERPNextService(config).get_companies()
         return JsonResponse({'success': True, 'companies': companies})
@@ -315,7 +321,6 @@ def sync_preflight(request):
     missing_banks = _bank_accounts_needing_erpnext(request.user, junk_ids)
 
     if request.method == 'POST':
-        # 1. Save config-level fields: company, bank_account, cost_center
         config_fields = []
         for field, post_key in [
             ('default_company',     'config_company'),
@@ -324,45 +329,29 @@ def sync_preflight(request):
         ]:
             val = request.POST.get(post_key, '').strip()
             if val:
-                old = getattr(config, field, '')
                 setattr(config, field, val)
                 config_fields.append(field)
-                if val != old:
-                    logger.info(f"ERPNext config '{field}': '{old}' → '{val}'")
         if config_fields:
             config.save(update_fields=config_fields)
 
-        # 2. Save BankAccount → ERPNext account mappings
         updated_banks = 0
         for ba in missing_banks:
             acct = request.POST.get(f'bank_erpnext_{ba.pk}', '').strip()
             if acct:
-                old = ba.erpnext_account or ''
                 ba.erpnext_account = acct
                 ba.save(update_fields=['erpnext_account'])
                 updated_banks += 1
-                logger.info(f"BankAccount '{ba.account_name}' erpnext_account: '{old}' → '{acct}'")
 
-        # 3. Save category → ERPNext account assignments
         updated_cats = 0
         for cat in missing_cats:
             acct = request.POST.get(f'account_{cat.pk}', '').strip()
             if acct:
-                old = cat.erpnext_account or ''
                 cat.erpnext_account = acct
                 cat.save(update_fields=['erpnext_account'])
                 updated_cats += 1
-                logger.info(f"Category '{cat.name}' erpnext_account: '{old}' → '{acct}'")
 
-        # 4. Warn about still-unassigned items
-        still_missing_banks = [
-            b for b in missing_banks
-            if not request.POST.get(f'bank_erpnext_{b.pk}', '').strip()
-        ]
-        still_missing_cats = [
-            c for c in missing_cats
-            if not request.POST.get(f'account_{c.pk}', '').strip()
-        ]
+        still_missing_banks = [b for b in missing_banks if not request.POST.get(f'bank_erpnext_{b.pk}', '').strip()]
+        still_missing_cats  = [c for c in missing_cats  if not request.POST.get(f'account_{c.pk}', '').strip()]
         if (still_missing_banks or still_missing_cats) and not request.POST.get('skip_missing'):
             parts = []
             if still_missing_banks:
@@ -371,20 +360,14 @@ def sync_preflight(request):
                 parts.append(f"{len(still_missing_cats)} categor{'y' if len(still_missing_cats) == 1 else 'ies'}")
             messages.warning(request, f"{' and '.join(parts)} still have no valid ERPNext account — affected transactions will be skipped.")
 
-        # 5. Dispatch GH Actions
         ok, err = _dispatch_gh_actions('erpnext_sync.yml')
         if ok:
-            messages.success(
-                request,
-                f'Saved ({updated_banks} bank account(s), {updated_cats} categor{"y" if updated_cats == 1 else "ies"} updated). '
-                'Sync job dispatched to GitHub Actions.',
-            )
+            messages.success(request, f'Saved ({updated_banks} bank account(s), {updated_cats} categories updated). Sync job dispatched.')
             return redirect(reverse('erpnext:sync_job_status'))
         else:
             messages.error(request, f'DB saved but GH dispatch failed: {err}')
             return redirect(reverse('bridge:bulk_operations'))
 
-    # GET
     ready_count = (
         BankTransaction.objects
         .filter(
@@ -396,10 +379,7 @@ def sync_preflight(request):
         )
         .exclude(category__erpnext_account='')
         .exclude(category_id__in=junk_ids)
-        .filter(
-            Q(bank_account__isnull=True) |
-            Q(bank_account__erpnext_account__contains=' - ')
-        )
+        .filter(Q(bank_account__isnull=True) | Q(bank_account__erpnext_account__contains=' - '))
         .count()
     )
 
