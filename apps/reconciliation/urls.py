@@ -13,5 +13,5 @@ urlpatterns = [
     path('<int:year>/<int:month>/export/', views.export_csv, name='export_csv'),
     path('match/manual/<int:txn_id>/', views.manual_match, name='manual_match'),
     path('match/unmatch/<int:txn_id>/', views.unmatch_transaction, name='unmatch_transaction'),
-    path('debug-je/', 
+    
 ]
