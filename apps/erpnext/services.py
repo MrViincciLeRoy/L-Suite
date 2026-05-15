@@ -134,10 +134,16 @@ class ERPNextService:
         return (self.config.bank_account or '').strip()
 
     def fetch_journal_entries(self, from_date, to_date):
+        """
+        Fetch journal entries for a date range.
+        Note: includes draft (docstatus=0) and submitted (docstatus=1) entries ?
+        ERPNext users often leave JEs in draft state, so filtering to submitted-only
+        would miss valid entries.
+        """
         url = f"{self.base_url}/api/resource/Journal Entry"
         params = {
-            'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark"]',
-            'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","=","1"]]',
+            'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark","docstatus"]',
+            'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"]]',
             'limit_page_length': 500,
         }
         try:

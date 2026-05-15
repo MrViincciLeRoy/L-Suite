@@ -16,12 +16,10 @@
     <i class="fa fa-search me-1"></i> Open Any Period
   </div>
   <div class="card-body">
-    <form method="get" action="" id="periodPickerForm" class="row g-2 align-items-end">
+    <form id="periodPickerForm" class="row g-2 align-items-end">
       <div class="col-auto">
         <label class="form-label mb-1">Month</label>
         <select name="month" class="form-select" style="width:auto;">
-          {% for m in "123456789101112"|make_list %}{% endfor %}
-          {% for i in "x"|ljust:"12" %}{% endfor %}
           <option value="1">January</option>
           <option value="2">February</option>
           <option value="3">March</option>
@@ -50,14 +48,14 @@
   </div>
 </div>
 
-<!-- Months with transaction data -->
+<!-- Months that have transaction data -->
 {% if txn_months %}
 <div class="card mb-4">
   <div class="card-header fw-semibold">
     <i class="fa fa-database me-1"></i> Periods With Transaction Data
   </div>
-  <div class="card-body p-0">
-    <div class="d-flex flex-wrap gap-2 p-3">
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-2">
       {% for d in txn_months %}
         <a href="{% url 'reconciliation:period_detail' year=d.year month=d.month %}"
            class="btn btn-sm btn-outline-secondary">
@@ -69,7 +67,7 @@
 </div>
 {% endif %}
 
-<!-- Existing reconciliation periods -->
+<!-- Reconciliation history -->
 {% if periods %}
 <h5 class="mb-3">Reconciliation History</h5>
 <div class="table-responsive">
@@ -117,7 +115,6 @@
 {% endif %}
 
 <script>
-// Handle the custom period picker form ? redirect to the period detail URL
 document.getElementById('periodPickerForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const month = this.querySelector('[name=month]').value;

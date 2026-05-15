@@ -13,19 +13,16 @@ from apps.erpnext.services import ERPNextService
 from .models import ERPNextJournalEntry, ReconciliationMatch, ReconciliationPeriod
 from .engine import run_matching
 
+
 @login_required
 def dashboard(request):
     periods = ReconciliationPeriod.objects.filter(user=request.user).order_by('-year', '-month')
 
-    # Find all months that have bank transactions for this user
-    from django.db.models import Min, Max
-    from apps.main.models import BankTransaction
-    import calendar
-
+    # All months that actually have bank transactions
     txn_months = (
         BankTransaction.objects
         .filter(user=request.user)
-        .dates('date', 'month', order='DESC')  # returns first day of each month
+        .dates('date', 'month', order='DESC')
     )
 
     today = date.today()
@@ -45,26 +42,24 @@ def fetch_journal_entries(request, year, month):
 
     _, last_day = monthrange(year, month)
     from_date = date(year, month, 1).isoformat()
-    to_date = date(year, month, last_day).isoformat()
+    to_date   = date(year, month, last_day).isoformat()
 
     try:
         service = ERPNextService(config)
-        # Uses the existing fetch_journal_entries from erpnext/services.py
-        # Returns list of JE dicts: name, posting_date, total_debit, remark, cheque_no
         entries = service.fetch_journal_entries(from_date, to_date)
         created = 0
         for e in entries:
-            # total_debit is the amount on the JE — what we match against
             amount = e.get('total_debit') or e.get('total_credit') or 0
             _, new = ERPNextJournalEntry.objects.get_or_create(
                 user=request.user,
                 je_name=e['name'],
                 defaults={
-                    'posting_date': e.get('posting_date', from_date),
-                    'amount': amount,
-                    'account': '',
-                    'reference_number': e.get('cheque_no', '') or e.get('user_remark', ''),
-                    'remark': e.get('remark', '') or e.get('user_remark', ''),
+                    'posting_date':   e.get('posting_date', from_date),
+                    'amount':         amount,
+                    'account':        '',
+                    # cheque_no holds the bank reference number on JEs created by LSuite
+                    'reference_number': e.get('cheque_no') or e.get('user_remark') or '',
+                    'remark':         e.get('remark') or e.get('user_remark') or '',
                 },
             )
             if new:
@@ -120,12 +115,20 @@ def period_detail(request, year, month):
         posting_date__month=month,
     ).count()
 
+    # Pass available JEs for the manual match modal dropdown
+    available_journal_entries = ERPNextJournalEntry.objects.filter(
+        user=request.user,
+        posting_date__year=year,
+        posting_date__month=month,
+    ).order_by('posting_date')
+
     return render(request, 'reconciliation/period_detail.html', {
-        'period': period,
-        'transactions': transactions,
-        'status_filter': status_filter,
-        'month_label': f"{month_name[month]} {year}",
-        'je_count': je_count,
+        'period':                    period,
+        'transactions':              transactions,
+        'status_filter':             status_filter,
+        'month_label':               f"{month_name[month]} {year}",
+        'je_count':                  je_count,
+        'available_journal_entries': available_journal_entries,
     })
 
 
@@ -136,7 +139,7 @@ def close_period(request, year, month):
     if not period.can_close():
         messages.error(request, 'Cannot close — unreconciled or flagged transactions remain.')
         return redirect('reconciliation:period_detail', year=year, month=month)
-    period.status = 'closed'
+    period.status    = 'closed'
     period.closed_at = timezone.now()
     period.save()
     messages.success(request, f'{period.label()} closed.')
@@ -147,7 +150,7 @@ def close_period(request, year, month):
 def reopen_period(request, year, month):
     period = get_object_or_404(ReconciliationPeriod, user=request.user, year=year, month=month)
     if request.method == 'POST':
-        period.status = 'open'
+        period.status    = 'open'
         period.closed_at = None
         period.save()
         messages.success(request, f'{period.label()} reopened.')
@@ -167,11 +170,11 @@ def manual_match(request, txn_id):
     ReconciliationMatch.objects.update_or_create(
         transaction=txn,
         defaults={
-            'user': request.user,
+            'user':          request.user,
             'journal_entry': je,
-            'status': 'manual',
-            'flag_reason': '',
-            'matched_by': 'manual',
+            'status':        'manual',
+            'flag_reason':   '',
+            'matched_by':    'manual',
         },
     )
     txn.recon_status = 'matched'
@@ -216,61 +219,7 @@ def export_csv(request, year, month):
             match.flag_reason if match else '',
         ])
     return response
-@login_required
-def debug_journal_entries(request):
-    config = _active_config(request.user)
-    if not config:
-        return JsonResponse({'error': 'No active ERPNext config'}, status=400)
 
-    year  = int(request.GET.get('year', 2025))
-    month = int(request.GET.get('month', 12))
-
-    from calendar import monthrange
-    from datetime import date
-    _, last_day = monthrange(year, month)
-    from_date = date(year, month, 1).isoformat()
-    to_date   = date(year, month, last_day).isoformat()
-
-    service = ERPNextService(config)
-    headers = service._get_headers()
-    base_url = service.base_url
-
-    # Try the raw request so we can see the full response
-    import requests
-    url = f"{base_url}/api/resource/Journal Entry"
-    params = {
-        'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark","docstatus"]',
-        'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"]]',
-        'limit_page_length': 20,
-    }
-
-    try:
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
-        raw = resp.json()
-    except Exception as e:
-        raw = {'exception': str(e)}
-
-    # Also try without docstatus filter (original has docstatus=1 which means submitted only)
-    params2 = dict(params)
-    params2['filters'] = f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","in","0,1,2"]]'
-    try:
-        resp2 = requests.get(url, headers=headers, params=params2, timeout=30)
-        raw2 = resp2.json()
-    except Exception as e:
-        raw2 = {'exception': str(e)}
-
-    return JsonResponse({
-        'config': {
-            'base_url': base_url,
-            'company': config.default_company,
-        },
-        'date_range': {'from': from_date, 'to': to_date},
-        'submitted_only_count': len(raw.get('data', [])),
-        'submitted_only_sample': raw.get('data', [])[:3],
-        'all_statuses_count': len(raw2.get('data', [])),
-        'all_statuses_sample': raw2.get('data', [])[:3],
-        'raw_error': raw.get('exc') or raw.get('exception'),
-    }, json_dumps_params={'indent': 2})
 
 def _refresh_period_counts(period):
     qs = BankTransaction.objects.filter(
@@ -278,8 +227,8 @@ def _refresh_period_counts(period):
         date__year=period.year,
         date__month=period.month,
     )
-    period.total_transactions = qs.count()
-    period.matched_count = qs.filter(recon_status='matched').count()
-    period.flagged_count = qs.filter(recon_status='flagged').count()
-    period.unreconciled_count = qs.filter(recon_status='unreconciled').count()
+    period.total_transactions  = qs.count()
+    period.matched_count       = qs.filter(recon_status='matched').count()
+    period.flagged_count       = qs.filter(recon_status='flagged').count()
+    period.unreconciled_count  = qs.filter(recon_status='unreconciled').count()
     period.save(update_fields=['total_transactions', 'matched_count', 'flagged_count', 'unreconciled_count'])
