@@ -134,12 +134,6 @@ class ERPNextService:
         return (self.config.bank_account or '').strip()
 
     def fetch_journal_entries(self, from_date, to_date):
-        """
-        Fetch journal entries for a date range.
-        Note: includes draft (docstatus=0) and submitted (docstatus=1) entries ?
-        ERPNext users often leave JEs in draft state, so filtering to submitted-only
-        would miss valid entries.
-        """
         url = f"{self.base_url}/api/resource/Journal Entry"
         params = {
             'fields': '["name","posting_date","total_debit","total_credit","remark","cheque_no","user_remark","docstatus"]',
@@ -152,6 +146,44 @@ class ERPNextService:
             return response.json().get('data', [])
         except Exception as e:
             logger.error(f"fetch_journal_entries failed: {e}")
+            raise
+
+    def fetch_sales_invoices(self, from_date, to_date):
+        url = f"{self.base_url}/api/resource/Sales Invoice"
+        fields = [
+            "name", "customer", "customer_name", "posting_date", "due_date",
+            "grand_total", "outstanding_amount", "status", "currency", "docstatus"
+        ]
+        params = {
+            'fields': str(fields).replace("'", '"'),
+            'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","!=","2"]]',
+            'limit_page_length': 500,
+        }
+        try:
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
+            response.raise_for_status()
+            return response.json().get('data', [])
+        except Exception as e:
+            logger.error(f"fetch_sales_invoices failed: {e}")
+            raise
+
+    def fetch_purchase_invoices(self, from_date, to_date):
+        url = f"{self.base_url}/api/resource/Purchase Invoice"
+        fields = [
+            "name", "supplier", "supplier_name", "posting_date", "due_date",
+            "grand_total", "outstanding_amount", "status", "currency", "bill_no", "bill_date", "docstatus"
+        ]
+        params = {
+            'fields': str(fields).replace("'", '"'),
+            'filters': f'[["posting_date",">=","{from_date}"],["posting_date","<=","{to_date}"],["docstatus","!=","2"]]',
+            'limit_page_length': 500,
+        }
+        try:
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=30)
+            response.raise_for_status()
+            return response.json().get('data', [])
+        except Exception as e:
+            logger.error(f"fetch_purchase_invoices failed: {e}")
             raise
 
     def create_journal_entry(self, transaction):
