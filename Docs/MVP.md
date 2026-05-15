@@ -6,7 +6,7 @@ Django financial management system that connects South African small business ba
 
 ## Problem
 
-Small businesses in South Africa — using banks like Capitec and TymeBank — have no easy way to get their bank transactions into ERPNext. Accountants and bookkeepers spend hours manually capturing transactions, matching invoices, and building month-end reports. LSuite removes that friction.
+Small businesses in South Africa — using banks like Capitec and TymeBank — have no easy way to get their bank transactions into ERPNext. Accountants and bookkeepers spend hours manually downloading CSVs, reformatting data, cleaning weeks of backlogged transactions, chasing overdue invoices, and matching supplier payments to POs. LSuite removes that friction end to end.
 
 ---
 
@@ -100,27 +100,75 @@ Gmail OAuth → Fetch Statement Emails → Parse PDF/CSV → Auto-Categorise →
 
 ## Planned Features (Next Phases)
 
-### Phase 1 — Reconciliation
+### Phase 1 — Live Bank Feed
+
+The current flow requires manually downloading a CSV from the bank, reformatting it, uploading it to LSuite, and then spending days cleaning a week's worth of backlogged transactions. The goal is to eliminate that entirely.
+
+- Direct API connection to Capitec and TymeBank (Open Banking / bank-specific APIs)
+- Automatic transaction pull on a daily basis or every 2 hours
+- Transactions available for processing on the same day they occur — no more week-long backlogs
+- Fallback to Gmail PDF/CSV import for banks without API access
+- Webhook or scheduled job to trigger pulls automatically (no manual intervention)
+
+---
+
+### Phase 2 — Reconciliation
+
 - Match bank transactions against ERPNext journal entries
-- Flag discrepancies (missing entries, amount mismatches, duplicates)
+- Flag discrepancies: missing entries, amount mismatches, duplicates
 - Reconciliation status per transaction and per statement period
 - Mark transactions as reconciled, with date and user stamp
 
-### Phase 2 — Invoices & Purchase Orders
-- Create and manage invoices inside LSuite
-- Create POs and match them against incoming bank payments
+---
+
+### Phase 3 — Invoices & Aged Debtor Management
+
+#### Invoice Management
+- Create and manage sales invoices inside LSuite
 - Auto-match bank credit transactions to outstanding invoices
-- Sync invoices and POs to ERPNext (Sales Invoice, Purchase Invoice doctype)
+- Sync invoices to ERPNext (Sales Invoice doctype)
 - Flag unmatched payments for manual review
 
-### Phase 3 — Monthly Reporting & Projections
+#### Aged Debtor Tracking
+- Track payment terms per client (e.g. 30-day payment terms)
+- Automatically bucket outstanding invoices by how far past due they are:
+  - **Current** — within payment terms
+  - **30 days overdue** — past due date, under 60 days
+  - **60 days overdue** — between 60 and 90 days
+  - **90+ days overdue** — critical, escalate immediately
+- Aged debtor dashboard showing all clients and their overdue status at a glance
+- Automated payment reminders sent to clients at 30, 60, and 90-day thresholds
+- Alerts and follow-up prompts for the accountant: *"Client X has not paid. It has been 45 days."*
+
+#### Customer Concentration Analysis
+- Revenue breakdown by client — which clients make up the largest share of income
+- Flag over-reliance on a single client (concentration risk)
+- Trend view: is a client's payment behaviour worsening over time?
+
+---
+
+### Phase 4 — Purchase Orders & Supplier Payment Matching
+
+- Create POs inside LSuite and raise them on ERPNext (Purchase Invoice doctype)
+- When a supplier payment leaves the bank account, automatically match it to the relevant PO
+- Allocate bank debit transactions to outstanding POs based on amount, supplier, and date
+- Flag unmatched supplier payments for manual review
+- PO status tracking: raised → partially paid → fully settled
+
+---
+
+### Phase 5 — Monthly Reporting & Projections
+
 - Monthly spending summary by category (actual vs prior month)
 - Projected spend for current month based on recurring transaction patterns
 - Variance commentary on categories that deviate significantly
 - Exportable summary report (PDF or CSV) for the accountant
 - Dashboard widget showing category breakdown for the month
 
-### Phase 4 — Accountant Workflow Tools
+---
+
+### Phase 6 — Accountant Workflow Tools
+
 - Month-end checklist: outstanding reconciliations, unsynced transactions, missing categories
 - Accrual prompts based on recurring transactions that haven't appeared yet
 - Client-ready summary pack: statement of transactions, category totals, reconciliation status
@@ -132,12 +180,17 @@ Gmail OAuth → Fetch Statement Emails → Parse PDF/CSV → Auto-Categorise →
 
 | Model | Purpose |
 |---|---|
-| `BankTransaction` | Raw transaction from PDF/CSV |
+| `BankTransaction` | Raw transaction from PDF/CSV or live bank feed |
 | `TransactionCategory` | User-defined categories with keywords and ERPNext account |
 | `EmailStatement` | Imported Gmail statement record |
 | `GoogleCredential` | Stored OAuth credentials per user |
 | `ERPNextConfig` | ERPNext instance connection details |
 | `ERPNextSyncLog` | Audit log of every sync |
 | `PDFImportJob` | Background job tracker for PDF batch imports |
+| `BankFeedJob` | Scheduled job tracker for live bank feed pulls |
 | `Invoice` *(partial)* | Invoice header and line items |
+| `InvoiceAgingBucket` | Aged debtor status per invoice (current / 30 / 60 / 90+) |
+| `PaymentReminder` | Log of automated reminders sent to clients |
+| `PurchaseOrder` | PO header linked to supplier and ERPNext |
+| `POPaymentMatch` | Links bank debit transactions to settled POs |
 | `BankAccount` | Named bank accounts per user |
