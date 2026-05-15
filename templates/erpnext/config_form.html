@@ -133,7 +133,6 @@
     </div>
   </div>
 </form>
-
 <script>
 const SAVED = {
   company:    "{{ config.default_company|default:''|escapejs }}",
@@ -141,6 +140,7 @@ const SAVED = {
   costCenter: "{{ config.default_cost_center|default:''|escapejs }}",
 };
 const IS_EDIT = {{ config|yesno:"true,false" }};
+const CONFIG_ID = {{ config.id|default:"null" }};
 
 function buildOptions(items, savedVal, emptyLabel) {
   let html = `<option value="">${emptyLabel}</option>`;
@@ -159,50 +159,41 @@ function buildBankOptions(accounts, savedVal) {
 }
 
 function loadDefaults() {
-  const baseUrl   = document.getElementById('fieldBaseUrl').value.trim().replace(/\/$/, '');
-  const apiKey    = document.getElementById('fieldApiKey').value.trim();
-  const apiSecret = document.getElementById('fieldApiSecret').value.trim();
-  const badge     = document.getElementById('loadBadge');
-  const errDiv    = document.getElementById('defaultsError');
-  const errMsg    = document.getElementById('defaultsErrorMsg');
-
-  if (!baseUrl || !apiKey || !apiSecret) {
-    errMsg.textContent = 'Fill in Base URL, API Key, and API Secret first.';
-    errDiv.classList.remove('d-none');
-    return;
-  }
+  const badge  = document.getElementById('loadBadge');
+  const errDiv = document.getElementById('defaultsError');
+  const errMsg = document.getElementById('defaultsErrorMsg');
 
   badge.classList.remove('d-none');
   errDiv.classList.add('d-none');
 
-  const headers = {
-    'Authorization': `token ${apiKey}:${apiSecret}`,
-    'Content-Type': 'application/json',
-  };
+  const configParam = CONFIG_ID ? `?config_id=${CONFIG_ID}` : '';
 
   Promise.all([
-    fetch(`${baseUrl}/api/resource/Company?fields=["name","abbr"]&limit_page_length=100`, { headers }).then(r => r.json()),
-    fetch(`${baseUrl}/api/resource/Account?fields=["name","account_type","root_type","is_group"]&limit_page_length=500`, { headers }).then(r => r.json()),
-    fetch(`${baseUrl}/api/resource/Cost%20Center?fields=["name"]&limit_page_length=200`, { headers }).then(r => r.json()),
+    fetch(`/erpnext/fetch-companies/${configParam}`,    { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
+    fetch(`/erpnext/fetch-accounts/${configParam}`,     { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
+    fetch(`/erpnext/fetch-cost-centers/${configParam}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(r => r.json()),
   ])
   .then(([companyData, accountData, ccData]) => {
     badge.classList.add('d-none');
 
-    if (companyData.data?.length)
+    if (companyData.success && companyData.companies?.length) {
       document.getElementById('companySelect').innerHTML =
-        buildOptions(companyData.data, SAVED.company, '— select company —');
+        buildOptions(companyData.companies, SAVED.company, '— select company —');
+    }
 
-    if (accountData.data?.length)
+    if (accountData.success && accountData.accounts?.length) {
       document.getElementById('bankSelect').innerHTML =
-        buildBankOptions(accountData.data, SAVED.bank);
+        buildBankOptions(accountData.accounts, SAVED.bank);
+    }
 
-    if (ccData.data?.length)
+    if (ccData.success && ccData.cost_centers?.length) {
       document.getElementById('costCenterSelect').innerHTML =
-        buildOptions(ccData.data, SAVED.costCenter, '— none —');
+        buildOptions(ccData.cost_centers, SAVED.costCenter, '— none —');
+    }
   })
   .catch(err => {
     badge.classList.add('d-none');
-    errMsg.textContent = `Could not connect: ${err.message}. Check URL and credentials.`;
+    errMsg.textContent = `Could not load options: ${err.message}`;
     errDiv.classList.remove('d-none');
   });
 }
@@ -211,4 +202,5 @@ if (IS_EDIT) {
   document.addEventListener('DOMContentLoaded', loadDefaults);
 }
 </script>
+
 {% endblock %}
