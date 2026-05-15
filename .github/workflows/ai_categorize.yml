@@ -6,7 +6,7 @@ on:
       user_id:
         description: 'User ID to limit categorization (leave empty for all)'
         required: false
-        default: '3'
+        default: ''
       dry_run:
         description: 'Dry run? (true/false)'
         required: false
@@ -15,6 +15,10 @@ on:
         description: 'Min zero-shot score 0.0-1.0 (default 0.2)'
         required: false
         default: '0.2'
+      force_all:
+        description: 'Wipe ALL categories and re-categorize everything from scratch? (true/false)'
+        required: false
+        default: 'false'
   schedule:
     - cron: '0 2 * * *'
 
@@ -49,6 +53,55 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Seed categories if none exist
+        run: python manage.py seed_categories
+
+      - name: Diagnose DB state
+        run: |
+          python manage.py shell << 'EOF'
+          from django.db.models import Q
+          from apps.main.models import BankTransaction, TransactionCategory
+
+          JUNK_NAMES = {
+              'uncategorised', 'uncategorized', 'other', 'other income',
+              'other expense', 'other expenses', 'fee fees', 'terminal) fees',
+              '***0) fees', 'sweep transfer', 'deposit investments',
+              'applied transfer', 'fnb cellphone', 'digital payments',
+              '4th transfer', 'received interest',
+          }
+
+          all_cats = list(TransactionCategory.objects.values_list('id', 'name'))
+          junk_ids = [pk for pk, name in all_cats if name.strip().lower() in JUNK_NAMES]
+
+          print(f"\n=== CATEGORIES ({len(all_cats)} total) ===")
+          for pk, name in all_cats:
+              is_junk = pk in junk_ids
+              print(f"  [{pk}] {name!r} {'<-- JUNK' if is_junk else ''}")
+
+          print(f"\n=== JUNK IDS: {junk_ids} ===")
+
+          total = BankTransaction.objects.count()
+          null_cat = BankTransaction.objects.filter(category__isnull=True).count()
+          junk_cat = BankTransaction.objects.filter(category_id__in=junk_ids).count() if junk_ids else 0
+          needs = BankTransaction.objects.filter(
+              Q(category__isnull=True) | Q(category_id__in=junk_ids)
+          ).count() if junk_ids else null_cat
+
+          print(f"\n=== TRANSACTIONS ===")
+          print(f"  Total:                {total}")
+          print(f"  Null category:        {null_cat}")
+          print(f"  Junk category:        {junk_cat}")
+          print(f"  Needs categorizing:   {needs}")
+
+          print(f"\n=== SAMPLE NEEDS CATEGORIZING ===")
+          qs = BankTransaction.objects.filter(
+              Q(category__isnull=True) | Q(category_id__in=junk_ids)
+          ) if junk_ids else BankTransaction.objects.filter(category__isnull=True)
+          for t in qs[:10]:
+              cat_name = t.category.name if t.category else 'NULL'
+              print(f"  [{t.id}] user={t.user_id} cat={cat_name!r} desc={t.description[:50]!r}")
+          EOF
+
       - name: Pre-warm model
         run: |
           python - <<'EOF'
@@ -72,7 +125,14 @@ jobs:
             ARGS="$ARGS --user ${{ github.event.inputs.user_id }}"
           fi
 
+          if [ "${{ github.event.inputs.force_all }}" = "true" ]; then
+            ARGS="$ARGS --force-all"
+          fi
+
           SCORE="${{ github.event.inputs.min_score }}"
           ARGS="$ARGS --min-score ${SCORE:-0.2}"
 
           python manage.py auto_categorize $ARGS
+
+      - name: Cleanup empty categories
+        run: python manage.py cleanup_categories
