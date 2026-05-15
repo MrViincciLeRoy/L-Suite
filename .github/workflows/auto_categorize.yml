@@ -1,18 +1,22 @@
-name: Auto Categorize Transactions
+name: AI Categorize
 
 on:
   workflow_dispatch:
     inputs:
       user_id:
-        description: 'User ID to categorize (leave empty for all users)'
+        description: 'User ID to limit categorization (leave empty for all)'
         required: false
         default: ''
-      min_score:
-        description: 'Minimum zero-shot score 0.0-1.0 (default 0.5)'
-        required: false
-        default: '0.5'
       dry_run:
         description: 'Dry run? (true/false)'
+        required: false
+        default: 'false'
+      min_score:
+        description: 'Min zero-shot score 0.0-1.0 (default 0.2)'
+        required: false
+        default: '0.2'
+      force_all:
+        description: 'Wipe ALL categories and re-categorize everything from scratch? (true/false)'
         required: false
         default: 'false'
   schedule:
@@ -24,24 +28,46 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      HUGGINGFACE_API_KEY: ${{ SECRETS.HF_TOKEN }}
-      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
-      DJANGO_SETTINGS_MODULE: LSuite.settings 
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HUGGINGFACE_API_KEY: ${{ secrets.HF_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      DJANGO_SETTINGS_MODULE: LSuite.settings
+      HF_HOME: /tmp/hf_cache
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: /tmp/hf_cache
+          key: hf-model-mDeBERTa-v3-base-mnli-xnli
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run auto_categorize
+      - name: Ensure seed categories exist
+        run: python manage.py cleanup_categories
+
+      - name: Pre-warm model
+        run: |
+          python - <<'EOF'
+          from transformers import pipeline
+          pipe = pipeline(
+              "zero-shot-classification",
+              model="MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+          )
+          print("Model loaded and cached.")
+          EOF
+
+      - name: Run AI categorization
         run: |
           ARGS=""
 
@@ -53,8 +79,11 @@ jobs:
             ARGS="$ARGS --user ${{ github.event.inputs.user_id }}"
           fi
 
-          if [ -n "${{ github.event.inputs.min_score }}" ]; then
-            ARGS="$ARGS --min-score ${{ github.event.inputs.min_score }}"
+          if [ "${{ github.event.inputs.force_all }}" = "true" ]; then
+            ARGS="$ARGS --force-all"
           fi
+
+          SCORE="${{ github.event.inputs.min_score }}"
+          ARGS="$ARGS --min-score ${SCORE:-0.2}"
 
           python manage.py auto_categorize $ARGS
