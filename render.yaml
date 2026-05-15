@@ -15,10 +15,18 @@ services:
       - key: GH_REPO
         value: "MrViincciLeRoy/L-Suite"
       - key: DATABASE_URL
-        value: "mysql"
+        fromDatabase:
+          name: lsuite-db
+          property: connectionString
       - key: DB_PASSWORD
         sync: false
       - key: ALLOWED_HOSTS
         value: ".onrender.com"
       - key: PYTHON_VERSION
         value: "3.11.0"
+
+databases:
+  - name: lsuite-db
+    plan: free
+    databaseName: lsuite
+    user: lsuite
