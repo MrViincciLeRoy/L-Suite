@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Reconciliation{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
   <h2><i class="fa fa-balance-scale me-2"></i>Reconciliation</h2>
   <a href="{% url 'reconciliation:period_detail' year=today.year month=today.month %}"
      class="btn btn-primary">
@@ -9,7 +10,68 @@
   </a>
 </div>
 
+<!-- Custom period picker -->
+<div class="card mb-4">
+  <div class="card-header fw-semibold">
+    <i class="fa fa-search me-1"></i> Open Any Period
+  </div>
+  <div class="card-body">
+    <form method="get" action="" id="periodPickerForm" class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label mb-1">Month</label>
+        <select name="month" class="form-select" style="width:auto;">
+          {% for m in "123456789101112"|make_list %}{% endfor %}
+          {% for i in "x"|ljust:"12" %}{% endfor %}
+          <option value="1">January</option>
+          <option value="2">February</option>
+          <option value="3">March</option>
+          <option value="4">April</option>
+          <option value="5">May</option>
+          <option value="6">June</option>
+          <option value="7">July</option>
+          <option value="8">August</option>
+          <option value="9">September</option>
+          <option value="10">October</option>
+          <option value="11">November</option>
+          <option value="12">December</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label mb-1">Year</label>
+        <input type="number" name="year" class="form-control" value="{{ today.year }}"
+               min="2000" max="2100" style="width:100px;">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-outline-primary">
+          <i class="fa fa-arrow-right me-1"></i>Go
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Months with transaction data -->
+{% if txn_months %}
+<div class="card mb-4">
+  <div class="card-header fw-semibold">
+    <i class="fa fa-database me-1"></i> Periods With Transaction Data
+  </div>
+  <div class="card-body p-0">
+    <div class="d-flex flex-wrap gap-2 p-3">
+      {% for d in txn_months %}
+        <a href="{% url 'reconciliation:period_detail' year=d.year month=d.month %}"
+           class="btn btn-sm btn-outline-secondary">
+          {{ d|date:"M Y" }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Existing reconciliation periods -->
 {% if periods %}
+<h5 class="mb-3">Reconciliation History</h5>
 <div class="table-responsive">
   <table class="table table-hover align-middle">
     <thead class="table-dark">
@@ -48,9 +110,20 @@
   </table>
 </div>
 {% else %}
-<div class="text-center text-muted py-5">
+<div class="text-center text-muted py-4">
   <i class="fa fa-inbox fa-3x mb-3 d-block"></i>
-  No reconciliation periods yet. Start with the current month.
+  No reconciliation periods yet. Pick a month above or use Current Month.
 </div>
 {% endif %}
+
+<script>
+// Handle the custom period picker form ? redirect to the period detail URL
+document.getElementById('periodPickerForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const month = this.querySelector('[name=month]').value;
+  const year  = this.querySelector('[name=year]').value;
+  window.location.href = `/reconciliation/${year}/${month}/`;
+});
+</script>
+
 {% endblock %}

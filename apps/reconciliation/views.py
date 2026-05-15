@@ -13,12 +13,27 @@ from apps.erpnext.services import ERPNextService
 from .models import ERPNextJournalEntry, ReconciliationMatch, ReconciliationPeriod
 from .engine import run_matching
 
-
 @login_required
 def dashboard(request):
     periods = ReconciliationPeriod.objects.filter(user=request.user).order_by('-year', '-month')
+
+    # Find all months that have bank transactions for this user
+    from django.db.models import Min, Max
+    from apps.main.models import BankTransaction
+    import calendar
+
+    txn_months = (
+        BankTransaction.objects
+        .filter(user=request.user)
+        .dates('date', 'month', order='DESC')  # returns first day of each month
+    )
+
     today = date.today()
-    return render(request, 'reconciliation/dashboard.html', {'periods': periods, 'today': today})
+    return render(request, 'reconciliation/dashboard.html', {
+        'periods': periods,
+        'today': today,
+        'txn_months': txn_months,
+    })
 
 
 @login_required
