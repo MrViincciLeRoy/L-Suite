@@ -1,6 +1,6 @@
 from calendar import monthrange
 
-from apps.erpnext.models import ERPNextConfig
+from apps.main.models import ERPNextConfig
 from apps.erpnext.services import ERPNextService
 from .models import ERPNextInvoice
 
@@ -15,10 +15,6 @@ class InvoiceSyncService:
         self.client = ERPNextService(self.config)
 
     def sync_period(self, year, month):
-        """
-        Pull Sales + Purchase Invoices from ERPNext for a given month.
-        Returns a dict with counts.
-        """
         _, last_day = monthrange(year, month)
         from_date = f"{year}-{month:02d}-01"
         to_date = f"{year}-{month:02d}-{last_day:02d}"
@@ -49,7 +45,6 @@ class InvoiceSyncService:
         return results
 
     def _upsert_invoice(self, data, invoice_type):
-        """Create or update a local ERPNextInvoice from raw API data. Returns True if created."""
         if invoice_type == 'sales':
             party_id = data.get('customer', '')
             party_name = data.get('customer_name', '') or data.get('customer', '')
