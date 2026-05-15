@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.main",
     "apps.bank_parsers",
     "apps.reconciliation",
+    "apps.invoices", 
 ]
 
 MIDDLEWARE = [

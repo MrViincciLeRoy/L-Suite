@@ -1,0 +1,38 @@
+# .github/workflows/sync_invoices.yml
+
+name: Sync Invoices
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # nightly at 02:00 UTC — remove if you want manual only
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Year (default: current)'
+        required: false
+      month:
+        description: 'Month (default: current)'
+        required: false
+      user_id:
+        description: 'Limit to user ID (optional)'
+        required: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Run sync
+        run: |
+          ARGS=""
+          [ -n "${{ github.event.inputs.year }}"    ] && ARGS="$ARGS --year ${{ github.event.inputs.year }}"
+          [ -n "${{ github.event.inputs.month }}"   ] && ARGS="$ARGS --month ${{ github.event.inputs.month }}"
+          [ -n "${{ github.event.inputs.user_id }}" ] && ARGS="$ARGS --user ${{ github.event.inputs.user_id }}"
+          python manage.py sync_invoices $ARGS
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY:   ${{ secrets.SECRET_KEY }}

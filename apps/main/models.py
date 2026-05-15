@@ -229,6 +229,14 @@ class BankTransaction(models.Model):
         blank=True,
         related_name='bank_transactions',
     )
+    # Phase 2: link to ERPNext invoice cache
+    linked_invoice = models.ForeignKey(
+        'invoices.ERPNextInvoice',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='linked_transactions',
+    )
     date = models.DateField(db_index=True)
     transaction_type = models.CharField(max_length=100, blank=True, db_index=True)
     amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
