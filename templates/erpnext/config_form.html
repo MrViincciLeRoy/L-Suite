@@ -16,37 +16,34 @@
   {% csrf_token %}
   <div class="row">
     <div class="col-md-8">
+
       <div class="card mb-4">
         <div class="card-header fw-semibold">Connection</div>
         <div class="card-body">
-
           <div class="mb-3">
             <label class="form-label">Configuration Name *</label>
-            <input type="text" name="name" class="form-control"
+            <input type="text" name="name" id="fieldName" class="form-control"
                    value="{{ config.name|default:'' }}" placeholder="e.g. My ERPNext" required>
           </div>
-
           <div class="mb-3">
             <label class="form-label">Base URL *</label>
-            <input type="url" name="base_url" class="form-control"
+            <input type="url" name="base_url" id="fieldBaseUrl" class="form-control"
                    value="{{ config.base_url|default:'' }}"
                    placeholder="https://erp.example.com" required>
             <div class="form-text text-muted">No trailing slash</div>
           </div>
-
           <div class="row">
             <div class="col-md-6 mb-3">
               <label class="form-label">API Key *</label>
-              <input type="text" name="api_key" class="form-control"
+              <input type="text" name="api_key" id="fieldApiKey" class="form-control"
                      value="{{ config.api_key|default:'' }}" required>
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">API Secret *</label>
-              <input type="password" name="api_secret" class="form-control"
+              <input type="password" name="api_secret" id="fieldApiSecret" class="form-control"
                      value="{{ config.api_secret|default:'' }}" required>
             </div>
           </div>
-
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
                    {% if not config or config.is_active %}checked{% endif %}>
@@ -58,20 +55,27 @@
       <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center fw-semibold">
           Defaults
-          <button type="button" class="btn btn-sm btn-outline-primary" id="loadDefaultsBtn"
-                  onclick="loadDefaults()">
-            <i class="fas fa-download"></i> Load from ERPNext
-          </button>
+          <div class="d-flex align-items-center gap-2">
+            <span id="loadBadge" class="badge bg-secondary d-none">
+              <i class="fas fa-spinner fa-spin"></i> loading…
+            </span>
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadDefaults()">
+              <i class="fas fa-sync-alt"></i> Reload Options
+            </button>
+          </div>
         </div>
         <div class="card-body">
-          <div id="defaultsError" class="alert alert-danger d-none"></div>
-          <div id="defaultsSuccess" class="alert alert-success d-none"></div>
+          <div id="defaultsError" class="alert alert-warning d-none">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span id="defaultsErrorMsg">Could not connect to ERPNext.</span>
+            <button type="button" class="btn btn-sm btn-outline-warning ms-2" onclick="loadDefaults()">Retry</button>
+          </div>
 
           <div class="mb-3">
             <label class="form-label">Default Company</label>
             <select name="default_company" id="companySelect" class="form-select">
               <option value="{{ config.default_company|default:'' }}">
-                {{ config.default_company|default:"— enter connection details first —" }}
+                {{ config.default_company|default:"— click Reload Options —" }}
               </option>
             </select>
             <div class="form-text text-muted">Saved: <code>{{ config.default_company|default:"not set" }}</code></div>
@@ -81,7 +85,7 @@
             <label class="form-label">Default Bank Account</label>
             <select name="bank_account" id="bankSelect" class="form-select">
               <option value="{{ config.bank_account|default:'' }}">
-                {{ config.bank_account|default:"— load from ERPNext —" }}
+                {{ config.bank_account|default:"— click Reload Options —" }}
               </option>
             </select>
             <div class="form-text text-muted">Saved: <code>{{ config.bank_account|default:"not set" }}</code></div>
@@ -112,9 +116,9 @@
         <div class="card-header fw-semibold"><i class="fas fa-info-circle"></i> Setup Guide</div>
         <div class="card-body small">
           <h6>1. Create an API User in ERPNext</h6>
-          <p>Go to <strong>Settings → Users</strong>, create a user with the role <em>Accounts User</em> or higher.</p>
+          <p>Go to <strong>Settings → Users</strong>, create a user with role <em>Accounts User</em> or higher.</p>
           <h6>2. Generate API Keys</h6>
-          <p>Open the user → <strong>API Access</strong> → Generate Keys. Copy both the API Key and Secret.</p>
+          <p>Open the user → <strong>API Access</strong> → Generate Keys.</p>
           <h6>3. Required Permissions</h6>
           <ul class="mb-3">
             <li>Journal Entry: Create, Read</li>
@@ -122,8 +126,8 @@
             <li>Cost Center: Read</li>
             <li>Company: Read</li>
           </ul>
-          <h6>4. Load Defaults</h6>
-          <p class="mb-0">Fill in the connection fields above, then click <strong>Load from ERPNext</strong> to populate the dropdowns automatically.</p>
+          <h6>4. Dropdowns</h6>
+          <p class="mb-0">Dropdowns auto-load when editing a saved config. For a new config, save it first then come back to edit and pick your defaults.</p>
         </div>
       </div>
     </div>
@@ -131,89 +135,80 @@
 </form>
 
 <script>
-function loadDefaults() {
-  const btn       = document.getElementById('loadDefaultsBtn');
-  const errDiv    = document.getElementById('defaultsError');
-  const okDiv     = document.getElementById('defaultsSuccess');
-  const baseUrl   = document.querySelector('[name=base_url]').value.trim().replace(/\/$/, '');
-  const apiKey    = document.querySelector('[name=api_key]').value.trim();
-  const apiSecret = document.querySelector('[name=api_secret]').value.trim();
+const SAVED = {
+  company:    "{{ config.default_company|default:''|escapejs }}",
+  bank:       "{{ config.bank_account|default:''|escapejs }}",
+  costCenter: "{{ config.default_cost_center|default:''|escapejs }}",
+};
+const IS_EDIT = {{ config|yesno:"true,false" }};
 
-  errDiv.classList.add('d-none');
-  okDiv.classList.add('d-none');
+function buildOptions(items, savedVal, emptyLabel) {
+  let html = `<option value="">${emptyLabel}</option>`;
+  items.forEach(item => {
+    const val = typeof item === 'string' ? item : item.name;
+    const sel = val === savedVal ? ' selected' : '';
+    html += `<option value="${val}"${sel}>${val}</option>`;
+  });
+  return html;
+}
+
+function buildBankOptions(accounts, savedVal) {
+  const pool = accounts.filter(a => !a.is_group && (a.account_type === 'Bank' || a.account_type === 'Cash'));
+  const items = pool.length ? pool : accounts.filter(a => !a.is_group && a.root_type === 'Asset');
+  return buildOptions(items.length ? items : accounts.filter(a => !a.is_group), savedVal, '— select bank account —');
+}
+
+function loadDefaults() {
+  const baseUrl   = document.getElementById('fieldBaseUrl').value.trim().replace(/\/$/, '');
+  const apiKey    = document.getElementById('fieldApiKey').value.trim();
+  const apiSecret = document.getElementById('fieldApiSecret').value.trim();
+  const badge     = document.getElementById('loadBadge');
+  const errDiv    = document.getElementById('defaultsError');
+  const errMsg    = document.getElementById('defaultsErrorMsg');
 
   if (!baseUrl || !apiKey || !apiSecret) {
-    errDiv.textContent = 'Fill in Base URL, API Key, and API Secret first.';
+    errMsg.textContent = 'Fill in Base URL, API Key, and API Secret first.';
     errDiv.classList.remove('d-none');
     return;
   }
 
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading…';
+  badge.classList.remove('d-none');
+  errDiv.classList.add('d-none');
 
   const headers = {
     'Authorization': `token ${apiKey}:${apiSecret}`,
     'Content-Type': 'application/json',
   };
 
-  const savedCompany    = "{{ config.default_company|escapejs }}";
-  const savedBank       = "{{ config.bank_account|escapejs }}";
-  const savedCostCenter = "{{ config.default_cost_center|escapejs }}";
-
   Promise.all([
     fetch(`${baseUrl}/api/resource/Company?fields=["name","abbr"]&limit_page_length=100`, { headers }).then(r => r.json()),
     fetch(`${baseUrl}/api/resource/Account?fields=["name","account_type","root_type","is_group"]&limit_page_length=500`, { headers }).then(r => r.json()),
-    fetch(`${baseUrl}/api/resource/Cost Center?fields=["name"]&limit_page_length=200`, { headers }).then(r => r.json()),
+    fetch(`${baseUrl}/api/resource/Cost%20Center?fields=["name"]&limit_page_length=200`, { headers }).then(r => r.json()),
   ])
   .then(([companyData, accountData, ccData]) => {
-    // Companies
-    const companySel = document.getElementById('companySelect');
-    if (companyData.data?.length) {
-      let html = '<option value="">— select company —</option>';
-      companyData.data.forEach(c => {
-        const sel = c.name === savedCompany ? ' selected' : '';
-        html += `<option value="${c.name}"${sel}>${c.name}</option>`;
-      });
-      companySel.innerHTML = html;
-    }
+    badge.classList.add('d-none');
 
-    // Bank accounts
-    const bankSel = document.getElementById('bankSelect');
-    if (accountData.data?.length) {
-      const pool = accountData.data.filter(
-        a => !a.is_group && (a.account_type === 'Bank' || a.account_type === 'Cash' || a.root_type === 'Asset')
-      );
-      const items = pool.length ? pool : accountData.data.filter(a => !a.is_group);
-      let html = '<option value="">— select bank account —</option>';
-      items.forEach(a => {
-        const sel = a.name === savedBank ? ' selected' : '';
-        html += `<option value="${a.name}"${sel}>${a.name}</option>`;
-      });
-      bankSel.innerHTML = html;
-    }
+    if (companyData.data?.length)
+      document.getElementById('companySelect').innerHTML =
+        buildOptions(companyData.data, SAVED.company, '— select company —');
 
-    // Cost centers
-    const ccSel = document.getElementById('costCenterSelect');
-    if (ccData.data?.length) {
-      let html = '<option value="">— none —</option>';
-      ccData.data.forEach(c => {
-        const sel = c.name === savedCostCenter ? ' selected' : '';
-        html += `<option value="${c.name}"${sel}>${c.name}</option>`;
-      });
-      ccSel.innerHTML = html;
-    }
+    if (accountData.data?.length)
+      document.getElementById('bankSelect').innerHTML =
+        buildBankOptions(accountData.data, SAVED.bank);
 
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-check-circle"></i> Loaded';
-    okDiv.textContent = 'Defaults loaded from ERPNext. Select your values and save.';
-    okDiv.classList.remove('d-none');
+    if (ccData.data?.length)
+      document.getElementById('costCenterSelect').innerHTML =
+        buildOptions(ccData.data, SAVED.costCenter, '— none —');
   })
   .catch(err => {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-download"></i> Load from ERPNext';
-    errDiv.textContent = `Failed to connect: ${err.message}. Check URL and credentials.`;
+    badge.classList.add('d-none');
+    errMsg.textContent = `Could not connect: ${err.message}. Check URL and credentials.`;
     errDiv.classList.remove('d-none');
   });
+}
+
+if (IS_EDIT) {
+  document.addEventListener('DOMContentLoaded', loadDefaults);
 }
 </script>
 {% endblock %}

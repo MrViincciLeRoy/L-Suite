@@ -24,16 +24,34 @@
                         <input type="text" class="form-control" id="name" name="name"
                                value="{{ category.name|default:'' }}"
                                placeholder="e.g., Transport & Fuel" required>
-                        <small class="form-text text-muted">A descriptive name for this category</small>
                     </div>
 
                     <div class="mb-3">
-                        <label for="erpnext_account" class="form-label">ERPNext Account *</label>
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>ERPNext Account *</span>
+                            <span id="accountBadge" class="badge bg-secondary">
+                                <i class="fas fa-spinner fa-spin"></i> loading?
+                            </span>
+                        </label>
+
+                        <div id="accountErrorBanner" class="alert alert-warning py-2 px-3 mb-2 d-none">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Could not load accounts ? type manually or
+                            <button type="button" class="btn btn-sm btn-outline-warning ms-1" onclick="fetchAccounts()">Retry</button>
+                        </div>
+
+                        <select id="erpnext_account_select" class="form-select mb-2 d-none"
+                                onchange="document.getElementById('erpnext_account').value = this.value">
+                            <option value="">? select account ?</option>
+                        </select>
+
                         <input type="text" class="form-control" id="erpnext_account" name="erpnext_account"
                                value="{{ category.erpnext_account|default:'' }}"
-                               placeholder="e.g., Transport Expenses - Company" required>
+                               placeholder="e.g., Transport Expenses - MC"
+                               oninput="syncSelect(this.value)"
+                               required>
                         <small class="form-text text-muted">
-                            The account name in ERPNext Chart of Accounts (include company abbreviation)
+                            Pick from the dropdown or type manually. Format: <code>Account Name - Company Abbr</code>
                         </small>
                     </div>
 
@@ -41,15 +59,9 @@
                         <label for="transaction_type" class="form-label">Transaction Type *</label>
                         <select class="form-select" id="transaction_type" name="transaction_type" required>
                             <option value="">Select type...</option>
-                            <option value="expense" {% if category.transaction_type == 'expense' %}selected{% endif %}>
-                                Expense (Money Out)
-                            </option>
-                            <option value="income" {% if category.transaction_type == 'income' %}selected{% endif %}>
-                                Income (Money In)
-                            </option>
-                            <option value="transfer" {% if category.transaction_type == 'transfer' %}selected{% endif %}>
-                                Transfer (Internal)
-                            </option>
+                            <option value="expense" {% if category.transaction_type == 'expense' %}selected{% endif %}>Expense (Money Out)</option>
+                            <option value="income"  {% if category.transaction_type == 'income'  %}selected{% endif %}>Income (Money In)</option>
+                            <option value="transfer"{% if category.transaction_type == 'transfer'%}selected{% endif %}>Transfer (Internal)</option>
                         </select>
                     </div>
 
@@ -64,16 +76,13 @@
                         <label for="color" class="form-label">Color (Optional)</label>
                         <input type="number" class="form-control" id="color" name="color"
                                value="{{ category.color|default:'' }}" min="1" max="20" placeholder="1-20">
-                        <small class="form-text text-muted">A number 1-20 for visual identification</small>
                     </div>
 
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="active" name="active" value="true"
                                {% if not category or category.active %}checked{% endif %}>
                         <label class="form-check-label" for="active">Active</label>
-                        <small class="form-text text-muted d-block">
-                            Inactive categories won't be used for auto-categorization
-                        </small>
+                        <small class="form-text text-muted d-block">Inactive categories won't be used for auto-categorization</small>
                     </div>
                 </div>
             </div>
@@ -93,10 +102,7 @@
                 </div>
                 <div class="card-body">
                     <h6>Keyword Matching</h6>
-                    <p class="small">
-                        Keywords are matched against transaction descriptions.
-                        If any keyword is found, the transaction is automatically categorized.
-                    </p>
+                    <p class="small">Keywords are matched against transaction descriptions. If any keyword is found, the transaction is automatically categorized.</p>
                     <h6>Example Keywords</h6>
                     <div class="alert alert-info small">
                         <strong>Transport:</strong><br>uber, bolt, taxi, fuel, petrol, diesel
@@ -107,7 +113,6 @@
                     </div>
                     <h6>ERPNext Account Format</h6>
                     <p class="small mb-0">
-                        Use the exact account name from ERPNext including the company abbreviation:<br>
                         <code>Account Name - Company Abbr</code><br>
                         Example: <code>Transport Expenses - MC</code>
                     </p>
@@ -116,4 +121,72 @@
         </div>
     </div>
 </form>
+
+<script>
+const SAVED_ACCOUNT = "{{ category.erpnext_account|default:''|escapejs }}";
+
+function buildGroupedOptions(accounts) {
+    const groups = {};
+    accounts.forEach(a => {
+        const g = a.root_type || 'Other';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(a);
+    });
+    const order = ['Income', 'Expense', 'Asset', 'Liability', 'Equity', 'Other'];
+    let html = '<option value="">? select account ?</option>';
+    order.forEach(g => {
+        if (!groups[g]) return;
+        html += `<optgroup label="${g}">`;
+        groups[g].forEach(a => {
+            const sel = a.name === SAVED_ACCOUNT ? ' selected' : '';
+            const label = a.account_type ? `${a.name} (${a.account_type})` : a.name;
+            html += `<option value="${a.name}"${sel}>${label}</option>`;
+        });
+        html += '</optgroup>';
+    });
+    return html;
+}
+
+function syncSelect(val) {
+    const sel = document.getElementById('erpnext_account_select');
+    if (!sel.classList.contains('d-none')) {
+        sel.value = [...sel.options].find(o => o.value === val) ? val : '';
+    }
+}
+
+function fetchAccounts() {
+    const badge  = document.getElementById('accountBadge');
+    const error  = document.getElementById('accountErrorBanner');
+    const select = document.getElementById('erpnext_account_select');
+
+    badge.innerHTML = '<i class="fas fa-spinner fa-spin"></i> loading?';
+    badge.className = 'badge bg-secondary';
+    error.classList.add('d-none');
+
+    fetch('/erpnext/fetch-accounts/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !data.accounts?.length) throw new Error(data.message || 'No accounts');
+
+            select.innerHTML = buildGroupedOptions(data.accounts);
+            select.classList.remove('d-none');
+
+            // Sync the text input if a match was found
+            if (SAVED_ACCOUNT) {
+                const match = [...select.options].find(o => o.value === SAVED_ACCOUNT);
+                if (match) select.value = SAVED_ACCOUNT;
+            }
+
+            badge.innerHTML = `<i class="fas fa-check-circle"></i> ${data.accounts.length} accounts`;
+            badge.className = 'badge bg-success';
+        })
+        .catch(() => {
+            badge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> failed';
+            badge.className = 'badge bg-danger';
+            error.classList.remove('d-none');
+        });
+}
+
+document.addEventListener('DOMContentLoaded', fetchAccounts);
+</script>
 {% endblock %}
